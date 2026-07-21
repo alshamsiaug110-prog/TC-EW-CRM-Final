@@ -1,0 +1,6 @@
+{
+  "name": "Eye World Lead Management System",
+  "description": "Smart CRM and lead intake dashboard for Eye Clinic, featuring role-based PIN access, duplicate detection, call logs, and real-time reports.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
