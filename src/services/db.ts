@@ -1,4 +1,4 @@
-import { Lead, TeamMessage, AuditLog, LeadStatus, LeadEntity, LeadPlatform, LeadPriority, UserRole, SystemUser, SYSTEM_USERS } from '../types';
+import { Lead, TeamMessage, AuditLog, LeadStatus, LeadEntity, LeadPlatform, LeadPriority, UserRole, SystemUser, SYSTEM_USERS, UnconvertedContact } from '../types';
 import { supabase } from '../lib/supabase';
 
 // Phone normalization: converts +20XXXXXXXXXX to 0XXXXXXXXXX
@@ -1042,6 +1042,73 @@ export const DatabaseService = {
     }
 
     return { imported: importedCount, duplicates: duplicateCount, errors };
+  },
+
+  // Unconverted Contacts API
+  async addUnconvertedContact(data: {
+    entity: LeadEntity;
+    platform: LeadPlatform;
+    reason: string;
+    name: string | null;
+    phone: string | null;
+    loggedBy: string;
+  }): Promise<{ success: boolean; error?: string }> {
+    try {
+      const newContact = {
+        id: `uc-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+        entity: data.entity,
+        platform: data.platform,
+        reason: data.reason,
+        name: data.name,
+        phone: data.phone,
+        loggedBy: data.loggedBy,
+        createdAt: new Date().toISOString(),
+        convertedToLeadId: null,
+      };
+      const { error } = await supabase.from('unconverted_contacts').insert([newContact]);
+      if (error) {
+        console.error('Failed to insert unconverted contact:', error);
+        return { success: false, error: error.message };
+      }
+      return { success: true };
+    } catch (e: any) {
+      console.error('Exception inserting unconverted contact:', e);
+      return { success: false, error: e.message || String(e) };
+    }
+  },
+
+  async getUnconvertedContacts(): Promise<UnconvertedContact[]> {
+    try {
+      const { data, error } = await supabase
+        .from('unconverted_contacts')
+        .select('*')
+        .order('createdAt', { ascending: false });
+      if (error) {
+        console.error('Supabase get unconverted contacts error:', error);
+        return [];
+      }
+      return (data || []) as UnconvertedContact[];
+    } catch (e) {
+      console.error('Supabase connection exception (unconverted):', e);
+      return [];
+    }
+  },
+
+  async promoteUnconvertedToLead(contactId: string, leadId: string): Promise<boolean> {
+    try {
+      const { error } = await supabase
+        .from('unconverted_contacts')
+        .update({ convertedToLeadId: leadId })
+        .eq('id', contactId);
+      if (error) {
+        console.error('Failed to update unconverted contact:', error);
+        return false;
+      }
+      return true;
+    } catch (e) {
+      console.error('Exception promoting unconverted contact:', e);
+      return false;
+    }
   },
 
   async runDiagnostics(): Promise<{

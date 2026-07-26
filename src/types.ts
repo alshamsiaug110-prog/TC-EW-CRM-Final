@@ -84,3 +84,17 @@ export interface AuditLog {
   action: string;
   details: string;
 }
+
+export type UnconvertedReason = 'No phone provided' | 'No name provided' | 'Went silent' | 'Spam/irrelevant' | 'Other';
+
+export interface UnconvertedContact {
+  id: string;
+  entity: LeadEntity;
+  platform: LeadPlatform;
+  reason: UnconvertedReason;
+  name: string | null;
+  phone: string | null;
+  loggedBy: string;
+  createdAt: string;
+  convertedToLeadId?: string;
+}

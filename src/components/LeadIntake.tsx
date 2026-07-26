@@ -23,8 +23,19 @@ export default function LeadIntake({ currentUser, onLeadAdded }: LeadIntakeProps
   // Status & Feedback States
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [duplicateError, setDuplicateError] = useState<string | null>(null);
+  const [generalError, setGeneralError] = useState<string | null>(null);
   const [duplicateWarning, setDuplicateWarning] = useState<{ name: string; status: string; addedBy: string; phone: string } | null>(null);
   const [checkingDuplicate, setCheckingDuplicate] = useState(false);
+
+  // Unconverted contact form state
+  const [showUnconvertedForm, setShowUnconvertedForm] = useState(false);
+  const [ucEntity, setUcEntity] = useState<LeadEntity>('Eye World');
+  const [ucPlatform, setUcPlatform] = useState<LeadPlatform>('WhatsApp');
+  const [ucReason, setUcReason] = useState<string>('');
+  const [ucName, setUcName] = useState('');
+  const [ucPhone, setUcPhone] = useState('');
+  const [ucSuccessMsg, setUcSuccessMsg] = useState<string | null>(null);
+  const [ucErrorMsg, setUcErrorMsg] = useState<string | null>(null);
 
   // Recent leads entered this session
   const [sessionLeads, setSessionLeads] = useState<Lead[]>([]);
@@ -68,6 +79,7 @@ export default function LeadIntake({ currentUser, onLeadAdded }: LeadIntakeProps
     e.preventDefault();
     setSuccessMsg(null);
     setDuplicateError(null);
+    setGeneralError(null);
 
     if (!name.trim()) return;
     if (!phone.trim()) return;
@@ -110,7 +122,45 @@ export default function LeadIntake({ currentUser, onLeadAdded }: LeadIntakeProps
         onLeadAdded();
       }
     } else {
-      setDuplicateError(result.error || 'Duplicate lead detected.');
+      const errorMsg = result.error || 'Failed to submit lead entry.';
+      if (errorMsg.toLowerCase().includes('duplicate') || errorMsg.toLowerCase().includes('already exists')) {
+        setDuplicateError(errorMsg);
+      } else {
+        setGeneralError(errorMsg);
+      }
+    }
+  };
+
+  const handleSubmitUnconverted = async () => {
+    if (!ucReason) {
+      setUcErrorMsg('Please select a reason for logging this unconverted contact.');
+      return;
+    }
+    setUcSuccessMsg(null);
+    setUcErrorMsg(null);
+
+    try {
+      const result = await DatabaseService.addUnconvertedContact({
+        entity: ucEntity,
+        platform: ucPlatform,
+        reason: ucReason as any,
+        name: ucName.trim() || null,
+        phone: ucPhone.trim() || null,
+        loggedBy: currentUser.name,
+      });
+      if (result.success) {
+        setUcSuccessMsg('Unconverted contact logged successfully.');
+        setUcEntity('Eye World');
+        setUcPlatform('WhatsApp');
+        setUcReason('');
+        setUcName('');
+        setUcPhone('');
+        setTimeout(() => setUcSuccessMsg(null), 3000);
+      } else {
+        setUcErrorMsg(result.error || 'Failed to log contact.');
+      }
+    } catch (e: any) {
+      setUcErrorMsg(e.message || 'Unexpected error logging contact.');
     }
   };
 
@@ -168,6 +218,7 @@ export default function LeadIntake({ currentUser, onLeadAdded }: LeadIntakeProps
                     onChange={(e) => {
                       setPhone(e.target.value);
                       if (duplicateError) setDuplicateError(null);
+                      if (generalError) setGeneralError(null);
                     }}
                     placeholder="+20 100 987 6543 or 0100..."
                     className="block w-full pl-11 pr-4 py-3 bg-neutral-950 border border-neutral-800 rounded-xl focus:bg-black focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 focus:outline-none transition-all text-sm font-mono text-white font-bold"
@@ -340,6 +391,21 @@ export default function LeadIntake({ currentUser, onLeadAdded }: LeadIntakeProps
                 </motion.div>
               )}
 
+              {generalError && (
+                <motion.div
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -10 }}
+                  className="bg-rose-950/25 border-l-4 border-rose-500 p-4 rounded-xl flex items-start space-x-3 shadow-md border border-rose-500/15"
+                >
+                  <AlertTriangle className="w-6 h-6 text-rose-400 flex-shrink-0 mt-0.5" />
+                  <div>
+                    <h4 className="text-sm font-bold text-rose-200">Submission Failed</h4>
+                    <p className="text-xs text-rose-300 mt-1 font-medium">{generalError}</p>
+                  </div>
+                </motion.div>
+              )}
+
               {successMsg && (
                 <motion.div
                   initial={{ opacity: 0, y: 10 }}
@@ -405,13 +471,121 @@ export default function LeadIntake({ currentUser, onLeadAdded }: LeadIntakeProps
                     <p className="font-mono text-neutral-400 text-[10px]">{l.phone}</p>
                     <div className="flex items-center justify-between text-[10px] text-neutral-500 pt-1.5 border-t border-neutral-900 mt-1.5">
                       <span className="font-semibold text-emerald-400">{l.entity}</span>
-                      <span>{new Date(l.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                      <span className="text-neutral-400 font-mono text-[9px]">{new Date(l.createdAt).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
                     </div>
                   </motion.div>
                 ))}
               </div>
             )}
           </div>
+
+          {/* Unconverted Contact Button */}
+          <button
+            onClick={() => setShowUnconvertedForm(!showUnconvertedForm)}
+            className="w-full py-2.5 bg-neutral-900 hover:bg-neutral-800 border border-neutral-800 text-neutral-300 rounded-xl text-xs font-bold transition-all cursor-pointer"
+          >
+            {showUnconvertedForm ? '− Close Unconverted Contact Form' : '+ Log Unconverted Contact'}
+          </button>
+
+          {/* Unconverted Contact Form */}
+          {showUnconvertedForm && (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              className="bg-neutral-950/40 border border-neutral-850 rounded-xl p-4 space-y-4"
+            >
+              <h4 className="text-xs font-bold text-neutral-300">Log Unconverted Contact</h4>
+              <p className="text-[10px] text-neutral-500">Track contacts that could not be converted. Name and phone are optional.</p>
+
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-[10px] font-semibold text-neutral-400 mb-1">Entity</label>
+                  <select
+                    value={ucEntity}
+                    onChange={(e) => setUcEntity(e.target.value as LeadEntity)}
+                    className="w-full px-3 py-2 bg-neutral-950 border border-neutral-800 rounded-lg text-xs text-neutral-300 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                  >
+                    <option value="Eye World">Eye World Clinic</option>
+                    <option value="Dr. Ihab">Dr. Ihab Clinic</option>
+                    <option value="Top Care">Top Care Clinic</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-semibold text-neutral-400 mb-1">Channel</label>
+                  <select
+                    value={ucPlatform}
+                    onChange={(e) => setUcPlatform(e.target.value as LeadPlatform)}
+                    className="w-full px-3 py-2 bg-neutral-950 border border-neutral-800 rounded-lg text-xs text-neutral-300 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                  >
+                    <option value="WhatsApp">WhatsApp</option>
+                    <option value="Instagram">Instagram</option>
+                    <option value="Facebook">Facebook</option>
+                    <option value="TikTok">TikTok</option>
+                    <option value="Referral">Referral</option>
+                    <option value="Other">Other Channel</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-semibold text-neutral-400 mb-1">Reason *</label>
+                  <div className="grid grid-cols-1 gap-1.5">
+                    {['No phone provided', 'No name provided', 'Went silent', 'Spam/irrelevant', 'Other'].map(r => (
+                      <button
+                        key={r}
+                        type="button"
+                        onClick={() => { setUcReason(r); setUcErrorMsg(null); }}
+                        className={`text-left px-3 py-1.5 rounded-lg text-[10px] font-semibold border transition-all cursor-pointer ${
+                          ucReason === r
+                            ? 'bg-emerald-500/20 border-emerald-500 text-emerald-200'
+                            : 'bg-neutral-950 border-neutral-800 text-neutral-400 hover:bg-neutral-900'
+                        }`}
+                      >
+                        {r}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-semibold text-neutral-400 mb-1">Name (optional)</label>
+                  <input
+                    type="text"
+                    value={ucName}
+                    onChange={(e) => setUcName(e.target.value)}
+                    placeholder="Leave blank if not provided"
+                    className="w-full px-3 py-2 bg-neutral-950 border border-neutral-800 rounded-lg text-xs text-white placeholder:text-neutral-700 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-semibold text-neutral-400 mb-1">Phone (optional)</label>
+                  <input
+                    type="text"
+                    value={ucPhone}
+                    onChange={(e) => setUcPhone(e.target.value)}
+                    placeholder="Leave blank if not provided"
+                    className="w-full px-3 py-2 bg-neutral-950 border border-neutral-800 rounded-lg text-xs text-white placeholder:text-neutral-700 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                  />
+                </div>
+
+                {ucErrorMsg && (
+                  <div className="text-[10px] text-rose-400 font-semibold">{ucErrorMsg}</div>
+                )}
+
+                {ucSuccessMsg && (
+                  <div className="text-[10px] text-emerald-400 font-semibold">{ucSuccessMsg}</div>
+                )}
+
+                <button
+                  onClick={handleSubmitUnconverted}
+                  className="w-full py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold transition-all cursor-pointer"
+                >
+                  Log Contact
+                </button>
+              </div>
+            </motion.div>
+          )}
 
           <div className="bg-neutral-950/30 p-4 rounded-xl border border-neutral-900/60 text-xs text-neutral-400 leading-relaxed">
             <h4 className="text-neutral-300 font-bold mb-1.5 flex items-center space-x-1.5">

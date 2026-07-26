@@ -1,10 +1,10 @@
 import React, { useState } from 'react';
 import { DatabaseService } from '../services/db';
-import { Lead, LeadStatus, LeadPriority, SystemUser, UserRole } from '../types';
+import { Lead, LeadStatus, LeadPriority, SystemUser, UserRole, UnconvertedContact } from '../types';
 import { 
   ShieldCheck, Search, Filter, MessageSquare, Lock, Eye, CheckCircle2, 
   AlertCircle, Sparkles, RefreshCw, Layers, ShieldAlert, Plus, Trash2, 
-  Edit2, Download, Check, UserPlus, X, FileText, Database, Upload 
+  Edit2, Download, Check, UserPlus, X, FileText, Database, Upload, Calendar, UserCheck, Clock 
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -25,7 +25,7 @@ interface OrganizerDashboardProps {
 export default function OrganizerDashboard({ currentUser, onLeadOptimized }: OrganizerDashboardProps) {
   const [leads, setLeads] = useState<Lead[]>([]);
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
-  const [activeTab, setActiveTab] = useState<'leads' | 'reports' | 'users'>('leads');
+  const [activeTab, setActiveTab] = useState<'leads' | 'booked' | 'reports' | 'users'>('leads');
 
   // Directory Search & Filter States
   const [searchQuery, setSearchQuery] = useState('');
@@ -48,6 +48,8 @@ export default function OrganizerDashboard({ currentUser, onLeadOptimized }: Org
   // Custom Report Builder States
   const [reportFromDate, setReportFromDate] = useState<string>('');
   const [reportToDate, setReportToDate] = useState<string>('');
+  const [includeUnconvertedInReport, setIncludeUnconvertedInReport] = useState(false);
+  const [reportUnconvertedData, setReportUnconvertedData] = useState<UnconvertedContact[]>([]);
   
   const ALL_REPORT_COLUMNS = [
     { key: 'ID', label: 'Inquiry ID' },
@@ -75,6 +77,13 @@ export default function OrganizerDashboard({ currentUser, onLeadOptimized }: Org
   const [rawImportText, setRawImportText] = useState('');
   const [importSuccessMsg, setImportSuccessMsg] = useState<string | null>(null);
   const [importErrorMsg, setImportErrorMsg] = useState<string | null>(null);
+
+  // Unconverted Contacts state
+  const [unconvertedContacts, setUnconvertedContacts] = useState<UnconvertedContact[]>([]);
+
+  // Booked tab state
+  const [bookedNoteInput, setBookedNoteInput] = useState('');
+  const [bookedViewFilter, setBookedViewFilter] = useState<'Pending' | 'History'>('Pending');
 
   // Sync state with local DB
   const refreshLeads = async (newSelectedId?: string) => {
@@ -129,6 +138,11 @@ export default function OrganizerDashboard({ currentUser, onLeadOptimized }: Org
 
   const handleUpdateAttendanceStatus = async (status: 'Pending' | 'Attended' | 'No-Show') => {
     if (!selectedLead) return;
+    
+    if (status === 'No-Show' && !selectedLead.organizerNote?.trim() && !organizerNoteInput.trim()) {
+      alert('Please add an organizer note before marking as No-Show.');
+      return;
+    }
     
     const res = await DatabaseService.updateLead(
       selectedLead.id,
@@ -262,10 +276,11 @@ export default function OrganizerDashboard({ currentUser, onLeadOptimized }: Org
     for (const lead of reportLeads) {
       const rowData = headers.map(col => {
         let val: any = '';
+        let isPhone = false;
         switch (col) {
           case 'ID': val = lead.id; break;
           case 'Name': val = lead.name; break;
-          case 'Phone': val = lead.phone; break;
+          case 'Phone': val = lead.phone; isPhone = true; break;
           case 'Entity': val = lead.entity; break;
           case 'Platform': val = lead.platform; break;
           case 'Priority': val = lead.priority; break;
@@ -287,12 +302,46 @@ export default function OrganizerDashboard({ currentUser, onLeadOptimized }: Org
           default: val = '';
         }
         const cleanVal = String(val).replace(/"/g, '""');
+        if (isPhone) {
+          return `"=""${cleanVal}"""`;
+        }
         return `"${cleanVal}"`;
       });
       csvRows.push(rowData.join(','));
     }
 
-    const csvContent = "data:text/csv;charset=utf-8," + encodeURIComponent(csvRows.join('\n'));
+    // Include unconverted contacts rows if toggled
+    if (includeUnconvertedInReport) {
+      for (const uc of reportUnconvertedData) {
+        const rowData = headers.map(col => {
+          let val: any = '';
+          let isPhone = false;
+          switch (col) {
+            case 'Name': val = uc.name || 'Unknown'; break;
+            case 'Phone': val = uc.phone || 'N/A'; isPhone = true; break;
+            case 'Entity': val = uc.entity; break;
+            case 'Platform': val = uc.platform; break;
+            case 'Inquiry Note': val = `Unconverted: ${uc.reason}`; break;
+            case 'Added By': val = uc.loggedBy; break;
+            case 'Created At': {
+              const date = new Date(uc.createdAt);
+              val = `${String(date.getDate()).padStart(2, '0')}/${String(date.getMonth() + 1).padStart(2, '0')}/${date.getFullYear()}`;
+              break;
+            }
+            default: val = '-';
+          }
+          const cleanVal = String(val).replace(/"/g, '""');
+          if (isPhone) {
+            return `"=""${cleanVal}"""`;
+          }
+          return `"${cleanVal}"`;
+        });
+        csvRows.push(rowData.join(','));
+      }
+    }
+
+    const BOM = '\uFEFF';
+    const csvContent = "data:text/csv;charset=utf-8," + encodeURIComponent(BOM + csvRows.join('\n'));
     const link = document.createElement("a");
     link.setAttribute("href", csvContent);
     link.setAttribute("download", `eyeworld_mapped_report_${new Date().toISOString().split('T')[0]}.csv`);
@@ -390,6 +439,14 @@ export default function OrganizerDashboard({ currentUser, onLeadOptimized }: Org
     return matchesSearch && matchesStatus && matchesPriority;
   });
 
+  const allBookedLeads = leads.filter(lead => lead.isBookedForAppointment || lead.status === 'Booked/Confirmed');
+  const bookedLeads = allBookedLeads.filter(lead => {
+    if (bookedViewFilter === 'Pending') {
+      return !lead.attendanceStatus || lead.attendanceStatus === 'Pending';
+    }
+    return lead.attendanceStatus === 'Attended' || lead.attendanceStatus === 'No-Show';
+  });
+
   const templates = [
     { label: "ASAP Diagnostic", text: "ASAP: Patient needs urgent diagnostic testing for vision correction (LASIK/Cataract). Coordinate nearest available slot." },
     { label: "Follow-Up Retainer", text: "Follow-up priority: Interested but requested callbacks after salary day. Call center agent must pursue closely." },
@@ -442,6 +499,19 @@ export default function OrganizerDashboard({ currentUser, onLeadOptimized }: Org
           >
             Custom Report Builder
           </button>
+
+          {(currentUser.role === 'Organizer' || currentUser.role === 'Admin') && (
+            <button
+              onClick={() => setActiveTab('booked')}
+              className={`px-6 py-2.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                activeTab === 'booked' ? 'bg-neutral-800 text-white shadow-sm' : 'text-neutral-500 hover:text-neutral-300'
+              }`}
+              id="tab-booked"
+            >
+              <Calendar className="w-3.5 h-3.5 inline mr-1.5 -mt-0.5" />
+              Booked
+            </button>
+          )}
 
           {currentUser.role === 'Admin' && (
             <button
@@ -834,6 +904,29 @@ export default function OrganizerDashboard({ currentUser, onLeadOptimized }: Org
                 </div>
               </div>
 
+              {/* Unconverted Contacts Toggle */}
+              <div className="space-y-3 pt-4 border-t border-neutral-850">
+                <h4 className="text-xs font-bold text-neutral-400 uppercase tracking-wide">3. Additional Data Sources</h4>
+                <label className="flex items-center space-x-2.5 p-2.5 bg-neutral-950/40 rounded-xl border border-neutral-850/60 cursor-pointer transition hover:bg-neutral-900/30">
+                  <input
+                    type="checkbox"
+                    checked={includeUnconvertedInReport}
+                    onChange={async (e) => {
+                      setIncludeUnconvertedInReport(e.target.checked);
+                      if (e.target.checked) {
+                        const data = await DatabaseService.getUnconvertedContacts();
+                        setReportUnconvertedData(data);
+                      }
+                    }}
+                    className="rounded border-neutral-800 bg-neutral-950 text-amber-600 focus:ring-amber-500 w-3.5 h-3.5"
+                  />
+                  <div className="text-xs">
+                    <span className="font-bold text-neutral-200">Include Unconverted Contacts</span>
+                    <p className="text-[10px] text-neutral-500">Add rows for contacts that were not converted to leads</p>
+                  </div>
+                </label>
+              </div>
+
               {/* Export Button */}
               <div className="pt-4 border-t border-neutral-850">
                 <button
@@ -860,11 +953,11 @@ export default function OrganizerDashboard({ currentUser, onLeadOptimized }: Org
                     </h3>
                     <p className="text-[11px] text-neutral-500 mt-0.5">Showing matching rows with your custom columns. Export matches spreadsheet.</p>
                   </div>
-                  <span className="bg-neutral-800 text-emerald-400 text-[10px] px-2 py-0.5 rounded font-mono font-bold border border-neutral-700">Matches: {getFilteredReportLeads().length} rows</span>
+                  <span className="bg-neutral-800 text-emerald-400 text-[10px] px-2 py-0.5 rounded font-mono font-bold border border-neutral-700">Matches: {getFilteredReportLeads().length + (includeUnconvertedInReport ? reportUnconvertedData.length : 0)} rows</span>
                 </div>
 
                 <div className="flex-1 overflow-auto bg-neutral-950/20">
-                  {getFilteredReportLeads().length === 0 ? (
+                  {getFilteredReportLeads().length === 0 && (!includeUnconvertedInReport || reportUnconvertedData.length === 0) ? (
                     <div className="p-16 text-center text-neutral-500 space-y-2">
                       <Layers className="w-10 h-10 mx-auto text-neutral-700" />
                       <p className="text-xs font-bold text-white">No entries match parameters</p>
@@ -920,6 +1013,32 @@ export default function OrganizerDashboard({ currentUser, onLeadOptimized }: Org
                                       'bg-neutral-800 text-neutral-400 border border-neutral-750'
                                     }`}>{value}</span>
                                   ) : value}
+                                </td>
+                              );
+                            })}
+                          </tr>
+                        ))}
+                        {includeUnconvertedInReport && reportUnconvertedData.map((uc) => (
+                          <tr key={uc.id} className="hover:bg-neutral-900/20 transition bg-amber-500/5">
+                            {selectedColumns.map(col => {
+                              let value = '';
+                              switch (col) {
+                                case 'Name': value = uc.name || 'Unknown'; break;
+                                case 'Phone': value = uc.phone || 'N/A'; break;
+                                case 'Entity': value = uc.entity; break;
+                                case 'Platform': value = uc.platform; break;
+                                case 'Inquiry Note': value = `Unconverted: ${uc.reason}`; break;
+                                case 'Added By': value = uc.loggedBy; break;
+                                case 'Created At': {
+                                  const d = new Date(uc.createdAt);
+                                  value = `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
+                                  break;
+                                }
+                                default: value = '-';
+                              }
+                              return (
+                                <td key={col} className="px-4 py-2.5 border-r border-neutral-850/40 truncate max-w-[180px] text-amber-300/70" title={value}>
+                                  {value}
                                 </td>
                               );
                             })}
@@ -1011,6 +1130,209 @@ export default function OrganizerDashboard({ currentUser, onLeadOptimized }: Org
                 )}
               </div>
             </div>
+          </div>
+        </div>
+      ) : activeTab === 'booked' ? (
+        <div className="space-y-6 animate-fadeIn" id="booked-tab-view">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div>
+              <h3 className="text-base font-extrabold text-white flex items-center space-x-2">
+                <Calendar className="w-5 h-5 text-emerald-400" />
+                <span>Booked Appointments</span>
+              </h3>
+              <p className="text-xs text-neutral-500 mt-0.5">Leads with confirmed bookings. Manage attendance and add notes.</p>
+            </div>
+            
+            <div className="flex items-center space-x-2 bg-neutral-950 p-1 rounded-lg border border-neutral-800">
+              <button
+                onClick={() => setBookedViewFilter('Pending')}
+                className={`px-3 py-1.5 rounded text-[10px] font-bold transition-all ${bookedViewFilter === 'Pending' ? 'bg-neutral-800 text-white' : 'text-neutral-500 hover:text-neutral-300'}`}
+              >
+                Pending
+              </button>
+              <button
+                onClick={() => setBookedViewFilter('History')}
+                className={`px-3 py-1.5 rounded text-[10px] font-bold transition-all ${bookedViewFilter === 'History' ? 'bg-neutral-800 text-white' : 'text-neutral-500 hover:text-neutral-300'}`}
+              >
+                History
+              </button>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 gap-4">
+            {bookedLeads.length === 0 ? (
+              <div className="glass-panel rounded-2xl p-12 text-center text-neutral-500 space-y-3">
+                <Calendar className="w-10 h-10 mx-auto text-neutral-700" />
+                <p className="text-xs font-bold text-white">No booked appointments</p>
+                <p className="text-[10px] max-w-sm mx-auto">Leads with confirmed bookings will appear here.</p>
+              </div>
+            ) : (
+              bookedLeads.map((lead) => (
+                <div key={lead.id} className="glass-panel rounded-2xl p-5 border border-neutral-800 space-y-4 shadow-md">
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <h4 className="font-bold text-white text-sm">{lead.name}</h4>
+                      <p className="text-xs font-mono text-emerald-400">{lead.phone}</p>
+                      <p className="text-[10px] text-neutral-500 mt-0.5">{lead.entity} · {lead.platform}</p>
+                    </div>
+                    <span className={`px-2.5 py-1 rounded text-xs font-bold border ${
+                      lead.attendanceStatus === 'Attended'
+                        ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                        : lead.attendanceStatus === 'No-Show'
+                        ? 'bg-rose-500/10 text-rose-400 border-rose-500/20'
+                        : 'bg-neutral-950 text-neutral-400 border-neutral-800'
+                    }`}>
+                      {lead.attendanceStatus || 'Pending'}
+                    </span>
+                  </div>
+
+                  <div className="flex items-center space-x-2">
+                    {(['Pending', 'Attended', 'No-Show'] as const).map((status) => (
+                      <button
+                        key={status}
+                        onClick={async () => {
+                          if (status === 'No-Show' && !lead.organizerNote?.trim()) {
+                            alert('Please add a note for this booking before marking as No-Show.');
+                            return;
+                          }
+                          const res = await DatabaseService.updateLead(lead.id, { attendanceStatus: status }, currentUser);
+                          if (res.success) await refreshLeads();
+                        }}
+                        className={`px-3 py-1.5 rounded-lg text-[10px] font-bold border transition-all cursor-pointer ${
+                          (lead.attendanceStatus || 'Pending') === status
+                            ? status === 'Attended'
+                              ? 'bg-emerald-600/20 text-emerald-400 border-emerald-500/30'
+                              : status === 'No-Show'
+                              ? 'bg-rose-600/20 text-rose-400 border-rose-500/30'
+                              : 'bg-neutral-800 text-white border-neutral-700'
+                            : 'bg-neutral-950 text-neutral-400 border-neutral-800 hover:text-white hover:bg-neutral-900'
+                        }`}
+                      >
+                        {status === 'Attended' ? <UserCheck className="w-3 h-3 inline mr-1" /> : status === 'No-Show' ? <X className="w-3 h-3 inline mr-1" /> : <Clock className="w-3 h-3 inline mr-1" />}
+                        {status}
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className="border-t border-neutral-800 pt-3">
+                    <label className="block text-[10px] font-semibold text-neutral-400 mb-1">Organizer Note</label>
+                    <div className="flex space-x-2">
+                      <input
+                        type="text"
+                        defaultValue={lead.organizerNote || ''}
+                        onBlur={async (e) => {
+                          if (e.target.value !== (lead.organizerNote || '')) {
+                            await DatabaseService.updateLead(lead.id, { organizerNote: e.target.value }, currentUser);
+                            await refreshLeads();
+                          }
+                        }}
+                        placeholder="Add note for this booking..."
+                        className="flex-1 px-3 py-2 bg-neutral-950 border border-neutral-800 rounded-lg text-xs text-white placeholder:text-neutral-700 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                      />
+                    </div>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+
+          {/* Unconverted Contacts Section */}
+          <div className="border-t border-neutral-800 pt-8 mt-8">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-base font-extrabold text-white flex items-center space-x-2">
+                <Layers className="w-5 h-5 text-amber-400" />
+                <span>Unconverted Contacts</span>
+              </h3>
+              <button
+                onClick={async () => {
+                  const contacts = await DatabaseService.getUnconvertedContacts();
+                  setUnconvertedContacts(contacts);
+                }}
+                className="px-3 py-1.5 bg-neutral-900 hover:bg-neutral-800 border border-neutral-800 text-neutral-300 rounded-lg text-[10px] font-bold transition-all cursor-pointer"
+              >
+                <RefreshCw className="w-3 h-3 inline mr-1" />
+                Refresh
+              </button>
+            </div>
+
+            {unconvertedContacts.length === 0 ? (
+              <div className="glass-panel rounded-2xl p-8 text-center text-neutral-500 space-y-2">
+                <Layers className="w-8 h-8 mx-auto text-neutral-700" />
+                <p className="text-xs font-semibold">No unconverted contacts</p>
+                <p className="text-[10px]">Log unconverted contacts from the Lead Intake panel.</p>
+                <button
+                  onClick={async () => {
+                    const contacts = await DatabaseService.getUnconvertedContacts();
+                    setUnconvertedContacts(contacts);
+                  }}
+                  className="mt-2 px-4 py-2 bg-neutral-900 hover:bg-neutral-800 border border-neutral-800 text-neutral-400 rounded-lg text-xs font-bold transition-all cursor-pointer"
+                >
+                  Load Unconverted Contacts
+                </button>
+              </div>
+            ) : (
+              <div className="glass-panel rounded-2xl overflow-hidden border border-neutral-800 divide-y divide-neutral-850">
+                {unconvertedContacts.map((contact) => (
+                  <div key={contact.id} className="p-4 hover:bg-neutral-900/10 transition flex flex-col md:flex-row md:items-center md:justify-between space-y-3 md:space-y-0">
+                    <div className="space-y-1 flex-1">
+                      <div className="flex items-center space-x-2">
+                        <span className="font-bold text-white text-xs">{contact.name || 'Unknown'}</span>
+                        {contact.phone && <span className="text-[10px] font-mono text-neutral-400">{contact.phone}</span>}
+                      </div>
+                      <div className="flex flex-wrap gap-1.5">
+                        <span className="bg-neutral-950 border border-neutral-800 text-neutral-400 text-[9px] font-bold px-1.5 py-0.5 rounded">{contact.entity}</span>
+                        <span className="bg-neutral-950 border border-neutral-800 text-neutral-400 text-[9px] font-bold px-1.5 py-0.5 rounded">{contact.platform}</span>
+                        <span className="bg-amber-500/10 border border-amber-500/20 text-amber-400 text-[9px] font-bold px-1.5 py-0.5 rounded">{contact.reason}</span>
+                      </div>
+                      <p className="text-[9px] text-neutral-500 font-mono">Logged by {contact.loggedBy} · {new Date(contact.createdAt).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' })}</p>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      {contact.convertedToLeadId ? (
+                        <span className="text-[10px] text-emerald-400 font-bold bg-emerald-500/10 px-2 py-1 rounded border border-emerald-500/20">Converted ✓</span>
+                      ) : (
+                        <button
+                          onClick={async () => {
+                            const name = contact.name || 'Unknown';
+                            const phone = contact.phone || `no-phone-${contact.id}`;
+                            const result = await DatabaseService.addLead(
+                              {
+                                name,
+                                phone,
+                                entity: contact.entity,
+                                platform: contact.platform,
+                                priority: 'Warm',
+                                status: 'Pending Call Center',
+                                inquiryNote: `Unconverted contact - ${contact.reason}`,
+                                addedBy: currentUser.name,
+                                assignedAgent: 'Unassigned',
+                                followUpDue: null,
+                                callCenterNote: '',
+                                organizerNote: '',
+                                organizerNoteUpdatedAt: null,
+                                isBookedForAppointment: false,
+                                commissionEligible: false,
+                                attendanceStatus: 'Pending',
+                              },
+                              currentUser
+                            );
+                            if (result.success && result.lead) {
+                              await DatabaseService.promoteUnconvertedToLead(contact.id, result.lead.id);
+                              const contacts = await DatabaseService.getUnconvertedContacts();
+                              setUnconvertedContacts(contacts);
+                              await refreshLeads();
+                            }
+                          }}
+                          className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-[10px] font-bold transition-all cursor-pointer border border-emerald-500/10"
+                        >
+                          <UserPlus className="w-3 h-3 inline mr-1" />
+                          Promote to Lead
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       ) : (
