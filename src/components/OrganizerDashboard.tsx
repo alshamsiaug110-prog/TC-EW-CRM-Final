@@ -642,7 +642,36 @@ export default function OrganizerDashboard({ currentUser, onLeadOptimized }: Org
 
                     <div className="text-right text-xs text-neutral-400 space-y-1">
                       <p>Platform: <span className="font-bold text-neutral-200">{selectedLead.platform}</span></p>
-                      <p>Status: <span className="font-bold text-neutral-200">{selectedLead.status}</span></p>
+                      <div className="flex items-center justify-end space-x-1.5">
+                        <span>Status:</span>
+                        {(currentUser.role === 'Organizer' || currentUser.role === 'Admin') ? (
+                          <select
+                            value={selectedLead.status}
+                            onChange={async (e) => {
+                              const newStatus = e.target.value as any;
+                              const res = await DatabaseService.updateLead(
+                                selectedLead.id,
+                                { status: newStatus },
+                                currentUser
+                              );
+                              if (res.success) {
+                                setSuccessMsg(`Status updated to ${newStatus}`);
+                                await refreshLeads(selectedLead.id);
+                                setTimeout(() => setSuccessMsg(null), 3000);
+                              }
+                            }}
+                            className="bg-neutral-900 border border-neutral-800 text-neutral-200 text-xs font-bold rounded py-0.5 pl-1 pr-6 focus:outline-none focus:ring-1 focus:ring-emerald-500 cursor-pointer"
+                          >
+                            <option value="Pending Call Center">Pending Call Center</option>
+                            <option value="Under Follow-Up">Under Follow-Up</option>
+                            <option value="Booked/Confirmed">Booked/Confirmed</option>
+                            <option value="Canceled">Canceled</option>
+                            <option value="Re-engage Lead">Re-engage Lead</option>
+                          </select>
+                        ) : (
+                          <span className="font-bold text-neutral-200">{selectedLead.status}</span>
+                        )}
+                      </div>
                       <p>Assigned Agent: <span className="font-bold text-emerald-400">{selectedLead.assignedAgent}</span></p>
                     </div>
                   </div>
