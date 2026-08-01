@@ -2,9 +2,11 @@ import React, { useState } from 'react';
 import { DatabaseService } from '../services/db';
 import { Lead, LeadStatus, LeadPriority, SystemUser, UserRole, UnconvertedContact } from '../types';
 import { 
-  ShieldCheck, Search, Filter, MessageSquare, Lock, Eye, CheckCircle2, 
-  AlertCircle, Sparkles, RefreshCw, Layers, ShieldAlert, Plus, Trash2, 
-  Edit2, Download, Check, UserPlus, X, FileText, Database, Upload, Calendar, UserCheck, Clock 
+  Users, Search, Filter, Phone, Mail, FileSpreadsheet,
+  CalendarDays, Settings, LogOut, ChevronRight, MessageSquare,
+  ShieldCheck, AlertCircle, RefreshCw, Save, Activity, LayoutDashboard,
+  Edit2, Download, Check, UserPlus, X, FileText, Database, Upload, Calendar, UserCheck, Clock, CheckCircle2, ShieldAlert,
+  MessageSquareCode
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -854,6 +856,63 @@ export default function OrganizerDashboard({ currentUser, onLeadOptimized }: Org
                       <span>{successMsg}</span>
                     </motion.div>
                   )}
+                </div>
+
+                {/* Historical timelines (Previous call notes and status history) */}
+                <div className="glass-panel rounded-2xl p-6 grid grid-cols-1 md:grid-cols-2 gap-6 shadow-xl mt-6">
+                  {/* Status Timeline */}
+                  <div className="space-y-4">
+                    <h4 className="text-xs font-bold text-neutral-400 uppercase tracking-wider flex items-center space-x-1.5 border-b border-neutral-850 pb-2">
+                      <Clock className="w-3.5 h-3.5 text-indigo-400" />
+                      <span>Status Changes Workflow</span>
+                    </h4>
+                    {selectedLead.statusHistory.length === 0 ? (
+                      <p className="text-neutral-500 text-xs font-medium">No updates recorded.</p>
+                    ) : (
+                      <div className="space-y-3 max-h-[160px] overflow-y-auto pr-1">
+                        {selectedLead.statusHistory.map((h, i) => (
+                          <div key={i} className="text-xs flex flex-col space-y-0.5 border-l-2 border-neutral-800 pl-3.5 relative">
+                            <span className="absolute -left-[5px] top-1 w-2 h-2 rounded-full bg-neutral-800 border border-neutral-700" />
+                            <div className="flex justify-between text-[10px] text-neutral-500 font-mono">
+                              <span>{new Date(h.changedAt).toLocaleDateString()} {new Date(h.changedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                              <span className="font-semibold text-neutral-300">{h.changedBy}</span>
+                            </div>
+                            <p className="font-bold text-white">{h.status}</p>
+                            {h.notes && <p className="text-[10px] text-neutral-400 italic mt-0.5">"{h.notes}"</p>}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Call Logs History */}
+                  <div className="space-y-4">
+                    <h4 className="text-xs font-bold text-neutral-400 uppercase tracking-wider flex items-center space-x-1.5 border-b border-neutral-850 pb-2">
+                      <MessageSquareCode className="w-3.5 h-3.5 text-emerald-400" />
+                      <span>Contact & Call History logs</span>
+                    </h4>
+                    {selectedLead.callLogs.length === 0 ? (
+                      <div className="p-4 text-center border border-dashed border-neutral-800 rounded-xl text-[10px] text-neutral-500 bg-neutral-950/20">
+                        No calls logged yet. Complete the Action Panel above to register your first call log.
+                      </div>
+                    ) : (
+                      <div className="space-y-3 max-h-[160px] overflow-y-auto pr-1">
+                        {selectedLead.callLogs.map((log) => (
+                          <div key={log.id} className="text-xs p-2.5 bg-neutral-950/40 border border-neutral-850 rounded-xl space-y-1">
+                            <div className="flex justify-between text-[10px] text-neutral-500 font-mono">
+                              <span className="font-bold text-neutral-300">{log.loggedBy}</span>
+                              <span>{new Date(log.loggedAt).toLocaleDateString()}</span>
+                            </div>
+                            <p className="text-neutral-300 font-medium leading-relaxed">"{log.note}"</p>
+                            <div className="flex items-center justify-between text-[9px] text-neutral-500 pt-1.5 border-t border-neutral-850/60">
+                              <span>Status: <span className="font-bold text-neutral-400">{log.statusAfterCall}</span></span>
+                              {log.followUpDue && <span>F/U Date: <span className="font-bold text-rose-400 font-mono">{log.followUpDue}</span></span>}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
             ) : (
