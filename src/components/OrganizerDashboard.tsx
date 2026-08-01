@@ -866,11 +866,11 @@ export default function OrganizerDashboard({ currentUser, onLeadOptimized }: Org
                       <Clock className="w-3.5 h-3.5 text-indigo-400" />
                       <span>Status Changes Workflow</span>
                     </h4>
-                    {selectedLead.statusHistory.length === 0 ? (
+                    {(selectedLead.statusHistory || []).length === 0 ? (
                       <p className="text-neutral-500 text-xs font-medium">No updates recorded.</p>
                     ) : (
                       <div className="space-y-3 max-h-[160px] overflow-y-auto pr-1">
-                        {selectedLead.statusHistory.map((h, i) => (
+                        {(selectedLead.statusHistory || []).map((h, i) => (
                           <div key={i} className="text-xs flex flex-col space-y-0.5 border-l-2 border-neutral-800 pl-3.5 relative">
                             <span className="absolute -left-[5px] top-1 w-2 h-2 rounded-full bg-neutral-800 border border-neutral-700" />
                             <div className="flex justify-between text-[10px] text-neutral-500 font-mono">
@@ -891,13 +891,13 @@ export default function OrganizerDashboard({ currentUser, onLeadOptimized }: Org
                       <MessageSquareCode className="w-3.5 h-3.5 text-emerald-400" />
                       <span>Contact & Call History logs</span>
                     </h4>
-                    {selectedLead.callLogs.length === 0 ? (
+                    {(selectedLead.callLogs || []).length === 0 ? (
                       <div className="p-4 text-center border border-dashed border-neutral-800 rounded-xl text-[10px] text-neutral-500 bg-neutral-950/20">
                         No calls logged yet. Complete the Action Panel above to register your first call log.
                       </div>
                     ) : (
                       <div className="space-y-3 max-h-[160px] overflow-y-auto pr-1">
-                        {selectedLead.callLogs.map((log) => (
+                        {(selectedLead.callLogs || []).map((log) => (
                           <div key={log.id} className="text-xs p-2.5 bg-neutral-950/40 border border-neutral-850 rounded-xl space-y-1">
                             <div className="flex justify-between text-[10px] text-neutral-500 font-mono">
                               <span className="font-bold text-neutral-300">{log.loggedBy}</span>
