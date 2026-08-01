@@ -681,6 +681,14 @@ export default function OrganizerDashboard({ currentUser, onLeadOptimized }: Org
                     <p className="text-xs text-neutral-300 font-medium leading-relaxed">"{selectedLead.inquiryNote}"</p>
                   </div>
 
+                  {/* Call Center Note */}
+                  {selectedLead.callCenterNote && (
+                    <div className="space-y-1.5 bg-blue-500/10 p-3.5 rounded-xl border border-blue-500/20">
+                      <h4 className="text-[10px] uppercase font-bold text-blue-400">Call Center Note</h4>
+                      <p className="text-xs text-blue-200 font-medium leading-relaxed">"{selectedLead.callCenterNote}"</p>
+                    </div>
+                  )}
+
                   {/* With Booking (commissionEligible) read-only display for Admin & Organizer */}
                   <div className="flex justify-between items-center bg-neutral-950/20 p-3 rounded-xl border border-neutral-850">
                     <div className="text-xs text-neutral-300">
@@ -704,7 +712,9 @@ export default function OrganizerDashboard({ currentUser, onLeadOptimized }: Org
                         <p className="text-[10px] text-neutral-500">Attendance confirmation for commission release workflow</p>
                       </div>
                       <span className={`px-2.5 py-1 rounded text-xs font-bold border ${
-                        selectedLead.attendanceStatus === 'Attended'
+                        selectedLead.attendanceStatus === 'Booked'
+                          ? 'bg-blue-500/10 text-blue-400 border-blue-500/20'
+                          : selectedLead.attendanceStatus === 'Attended'
                           ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
                           : selectedLead.attendanceStatus === 'No-Show'
                           ? 'bg-rose-500/10 text-rose-400 border-rose-500/20'
@@ -715,11 +725,11 @@ export default function OrganizerDashboard({ currentUser, onLeadOptimized }: Org
                     </div>
 
                     {(currentUser.role === 'Organizer' || currentUser.role === 'Admin') ? (
-                      <div className="grid grid-cols-3 gap-2 pt-1">
+                      <div className="grid grid-cols-4 gap-2 pt-1">
                         <button
                           type="button"
                           onClick={() => handleUpdateAttendanceStatus('Pending')}
-                          className={`px-2 py-1.5 rounded-lg text-xs font-bold transition-all border cursor-pointer ${
+                          className={`px-2 py-1.5 rounded-lg text-[11px] font-bold transition-all border cursor-pointer ${
                             (selectedLead.attendanceStatus || 'Pending') === 'Pending'
                               ? 'bg-neutral-800 text-white border-neutral-700'
                               : 'bg-neutral-950 text-neutral-400 border-neutral-900 hover:text-white hover:bg-neutral-900'
@@ -729,8 +739,19 @@ export default function OrganizerDashboard({ currentUser, onLeadOptimized }: Org
                         </button>
                         <button
                           type="button"
+                          onClick={() => handleUpdateAttendanceStatus('Booked')}
+                          className={`px-2 py-1.5 rounded-lg text-[11px] font-bold transition-all border cursor-pointer ${
+                            selectedLead.attendanceStatus === 'Booked'
+                              ? 'bg-blue-600/20 text-blue-400 border-blue-500/30'
+                              : 'bg-neutral-950 text-neutral-400 border-neutral-900 hover:text-blue-400 hover:bg-blue-950/20'
+                          }`}
+                        >
+                          Booked
+                        </button>
+                        <button
+                          type="button"
                           onClick={() => handleUpdateAttendanceStatus('Attended')}
-                          className={`px-2 py-1.5 rounded-lg text-xs font-bold transition-all border cursor-pointer ${
+                          className={`px-2 py-1.5 rounded-lg text-[11px] font-bold transition-all border cursor-pointer ${
                             selectedLead.attendanceStatus === 'Attended'
                               ? 'bg-emerald-600/20 text-emerald-400 border-emerald-500/30'
                               : 'bg-neutral-950 text-neutral-400 border-neutral-900 hover:text-emerald-400 hover:bg-emerald-950/20'
@@ -741,7 +762,7 @@ export default function OrganizerDashboard({ currentUser, onLeadOptimized }: Org
                         <button
                           type="button"
                           onClick={() => handleUpdateAttendanceStatus('No-Show')}
-                          className={`px-2 py-1.5 rounded-lg text-xs font-bold transition-all border cursor-pointer ${
+                          className={`px-2 py-1.5 rounded-lg text-[11px] font-bold transition-all border cursor-pointer ${
                             selectedLead.attendanceStatus === 'No-Show'
                               ? 'bg-rose-600/20 text-rose-400 border-rose-500/30'
                               : 'bg-neutral-950 text-neutral-400 border-neutral-900 hover:text-rose-400 hover:bg-rose-950/20'

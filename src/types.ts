@@ -57,7 +57,7 @@ export interface Lead {
   updatedAt: string; // ISO String
   isBookedForAppointment: boolean;
   commissionEligible: boolean;
-  attendanceStatus: 'Pending' | 'Attended' | 'No-Show';
+  attendanceStatus: 'Pending' | 'Booked' | 'Attended' | 'No-Show';
   statusHistory: StatusHistoryEntry[];
   callLogs: CallLogEntry[];
 }

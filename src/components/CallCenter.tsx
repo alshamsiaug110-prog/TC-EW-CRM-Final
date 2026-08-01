@@ -334,6 +334,19 @@ export default function CallCenter({ currentUser, onLeadUpdated }: CallCenterPro
                     </p>
                   </div>
                 )}
+
+                {/* Call Center Note */}
+                {selectedLead.callCenterNote && (
+                  <div className="bg-blue-500/10 p-4 rounded-xl border border-blue-500/20 space-y-1.5">
+                    <h4 className="text-xs font-bold text-blue-400 flex items-center space-x-1.5">
+                      <BookOpen className="w-3.5 h-3.5 text-blue-400" />
+                      <span>Latest Call Center Note</span>
+                    </h4>
+                    <p className="text-xs text-blue-200 leading-relaxed font-semibold">
+                      "{selectedLead.callCenterNote}"
+                    </p>
+                  </div>
+                )}
               </div>
 
               {/* Action Form: Log a Call & Update Status */}
