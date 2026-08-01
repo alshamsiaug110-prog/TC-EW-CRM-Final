@@ -2,10 +2,9 @@ import React, { useState } from 'react';
 import { DatabaseService } from '../services/db';
 import { Lead, LeadStatus, LeadPriority, SystemUser, UserRole, UnconvertedContact } from '../types';
 import { 
-  Users, Search, Filter, Phone, Mail, FileSpreadsheet,
-  CalendarDays, Settings, LogOut, ChevronRight, MessageSquare,
-  ShieldCheck, AlertCircle, RefreshCw, Save, Activity, LayoutDashboard,
-  Edit2, Download, Check, UserPlus, X, FileText, Database, Upload, Calendar, UserCheck, Clock, CheckCircle2, ShieldAlert,
+  ShieldCheck, Search, Filter, MessageSquare, Lock, Eye, CheckCircle2, 
+  AlertCircle, Sparkles, RefreshCw, Layers, ShieldAlert, Plus, Trash2, 
+  Edit2, Download, Check, UserPlus, X, FileText, Database, Upload, Calendar, UserCheck, Clock,
   MessageSquareCode
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -138,7 +137,7 @@ export default function OrganizerDashboard({ currentUser, onLeadOptimized }: Org
     }
   };
 
-  const handleUpdateAttendanceStatus = async (status: 'Pending' | 'Attended' | 'No-Show') => {
+  const handleUpdateAttendanceStatus = async (status: 'Pending' | 'Attended' | 'No-Show' | 'Booked') => {
     if (!selectedLead) return;
     
     if (status === 'No-Show' && !selectedLead.organizerNote?.trim() && !organizerNoteInput.trim()) {
