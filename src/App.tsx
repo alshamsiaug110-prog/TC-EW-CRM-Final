@@ -483,12 +483,10 @@ export default function App() {
           <div className="flex items-center space-x-1 bg-neutral-900/40 px-3 py-1.5 rounded-lg border border-neutral-800/80 text-neutral-400">
             <BadgeInfo className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0" />
             {dbError ? (
-              <button 
-                onClick={() => setShowSetupModal(true)}
-                className="text-amber-400 hover:text-amber-300 font-bold underline text-left"
-              >
-                Database connection error detected. Click here to open SQL setup script instructions.
-              </button>
+              <div className="flex-1 min-w-0 cursor-pointer" onClick={() => setShowSetupModal(true)}>
+                <span className="font-semibold block sm:inline mr-2 text-amber-500">Database Error:</span>
+                <span className="truncate">{dbError}</span> (Click here for SQL setup)
+              </div>
             ) : (
               <span>Supabase CRM Database is active. All data reads and writes persist immediately and directly to the secure Supabase cloud store.</span>
             )}

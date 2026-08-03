@@ -361,7 +361,7 @@ export const DatabaseService = {
   async addLead(
     leadData: Omit<Lead, 'id' | 'createdAt' | 'updatedAt' | 'statusHistory' | 'callLogs'>,
     author: { name: string; role: UserRole }
-  ): Promise<{ success: boolean; error?: string; lead?: Lead }> {
+  ): Promise<{ success: boolean; error?: string; lead?: Lead; duplicateLead?: Lead }> {
     const normalized = normalizePhone(leadData.phone);
 
     // Duplicate Check in Supabase first
@@ -378,6 +378,7 @@ export const DatabaseService = {
         return {
           success: false,
           error: `Lead with this phone number (${normalized}) already exists. Name: "${duplicate.name}" (Status: ${duplicate.status}). Created by ${duplicate.addedBy}.`,
+          duplicateLead: duplicate,
         };
       }
     } catch (e) {

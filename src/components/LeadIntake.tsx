@@ -40,6 +40,11 @@ export default function LeadIntake({ currentUser, onLeadAdded }: LeadIntakeProps
   // Recent leads entered this session
   const [sessionLeads, setSessionLeads] = useState<Lead[]>([]);
 
+  // Duplicate lead edit state
+  const [duplicateLeadToEdit, setDuplicateLeadToEdit] = useState<Lead | null>(null);
+  const [duplicateEditNote, setDuplicateEditNote] = useState('');
+  const [isUpdatingDuplicate, setIsUpdatingDuplicate] = useState(false);
+
   // Phone live normalization preview
   const normalizedPhonePreview = phone ? normalizePhone(phone) : '';
 
@@ -125,10 +130,41 @@ export default function LeadIntake({ currentUser, onLeadAdded }: LeadIntakeProps
       const errorMsg = result.error || 'Failed to submit lead entry.';
       if (errorMsg.toLowerCase().includes('duplicate') || errorMsg.toLowerCase().includes('already exists')) {
         setDuplicateError(errorMsg);
+        if (result.duplicateLead) {
+          setDuplicateLeadToEdit(result.duplicateLead);
+          setDuplicateEditNote('');
+        }
       } else {
         setGeneralError(errorMsg);
       }
     }
+  };
+
+  const handleUpdateDuplicate = async () => {
+    if (!duplicateLeadToEdit || !duplicateEditNote.trim()) return;
+    setIsUpdatingDuplicate(true);
+    setGeneralError(null);
+    
+    const updatePrefix = `[Update by ${currentUser.name} on ${new Date().toLocaleDateString()}] `;
+    const newNote = duplicateLeadToEdit.inquiryNote 
+      ? duplicateLeadToEdit.inquiryNote + '\n\n' + updatePrefix + duplicateEditNote.trim()
+      : updatePrefix + duplicateEditNote.trim();
+
+    const res = await DatabaseService.updateLead(duplicateLeadToEdit.id, { inquiryNote: newNote }, currentUser);
+    if (res.success) {
+      setSuccessMsg(`Successfully appended update to existing lead "${duplicateLeadToEdit.name}".`);
+      setDuplicateLeadToEdit(null);
+      setDuplicateEditNote('');
+      setDuplicateError(null);
+      
+      // Reset form
+      setName('');
+      setPhone('');
+      setInquiryNote('');
+    } else {
+      setGeneralError(res.error || 'Failed to update lead.');
+    }
+    setIsUpdatingDuplicate(false);
   };
 
   const handleSubmitUnconverted = async () => {
@@ -421,6 +457,90 @@ export default function LeadIntake({ currentUser, onLeadAdded }: LeadIntakeProps
                 </motion.div>
               )}
             </AnimatePresence>
+
+            {/* Duplicate Lead Editor Modal */}
+            {duplicateLeadToEdit && (
+              <div className="fixed inset-0 z-50 overflow-y-auto bg-black/80 flex items-center justify-center p-4 backdrop-blur-sm">
+                <div className="bg-neutral-900 border border-neutral-800 rounded-2xl w-full max-w-2xl flex flex-col shadow-2xl overflow-hidden">
+                  <div className="px-6 py-4 border-b border-neutral-800 flex items-center justify-between bg-neutral-950/40">
+                    <div className="flex items-center space-x-2.5">
+                      <AlertTriangle className="w-5 h-5 text-amber-500" />
+                      <h3 className="text-sm font-bold text-white uppercase tracking-wider font-mono">Duplicate Lead Detected</h3>
+                    </div>
+                    <button 
+                      type="button"
+                      onClick={() => setDuplicateLeadToEdit(null)}
+                      className="text-neutral-500 hover:text-white transition-colors p-1"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                  
+                  <div className="p-6 space-y-5">
+                    <div className="p-4 bg-amber-500/10 border border-amber-500/20 rounded-xl">
+                      <p className="text-sm text-amber-400 font-medium">
+                        This phone number is already registered to <strong>{duplicateLeadToEdit.name}</strong>. 
+                        Instead of creating a new lead, you can review their history below and append a new note.
+                      </p>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="bg-neutral-950 rounded-lg p-3 border border-neutral-800/50">
+                        <span className="text-xs text-neutral-500 block mb-1 uppercase font-mono">Entity</span>
+                        <span className="font-semibold text-white">{duplicateLeadToEdit.entity}</span>
+                      </div>
+                      <div className="bg-neutral-950 rounded-lg p-3 border border-neutral-800/50">
+                        <span className="text-xs text-neutral-500 block mb-1 uppercase font-mono">Current Status</span>
+                        <span className="font-semibold text-white">{duplicateLeadToEdit.status}</span>
+                      </div>
+                    </div>
+                    
+                    {duplicateLeadToEdit.inquiryNote && (
+                      <div className="bg-neutral-950 rounded-lg p-4 border border-neutral-800/50">
+                        <h4 className="text-xs font-bold text-neutral-400 mb-2 uppercase tracking-wider">Previous Inquiry Notes</h4>
+                        <p className="text-sm text-neutral-300 whitespace-pre-wrap">{duplicateLeadToEdit.inquiryNote}</p>
+                      </div>
+                    )}
+
+                    <div>
+                      <label className="block text-sm font-bold text-white mb-2">Append New Update / Note</label>
+                      <textarea
+                        className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white placeholder-neutral-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500 transition-all min-h-[120px]"
+                        placeholder="Type the latest interaction or request from the patient here..."
+                        value={duplicateEditNote}
+                        onChange={(e) => setDuplicateEditNote(e.target.value)}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="px-6 py-4 bg-neutral-950/40 border-t border-neutral-800 flex justify-end space-x-3">
+                    <button
+                      type="button"
+                      onClick={() => setDuplicateLeadToEdit(null)}
+                      className="px-5 py-2.5 rounded-lg text-sm font-bold text-neutral-400 hover:text-white transition-colors"
+                      disabled={isUpdatingDuplicate}
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleUpdateDuplicate}
+                      disabled={!duplicateEditNote.trim() || isUpdatingDuplicate}
+                      className="px-5 py-2.5 bg-emerald-500 hover:bg-emerald-600 disabled:bg-emerald-500/50 disabled:cursor-not-allowed text-white text-sm font-bold rounded-lg transition-colors flex items-center space-x-2 shadow-lg shadow-emerald-500/20"
+                    >
+                      {isUpdatingDuplicate ? (
+                        <span>Updating...</span>
+                      ) : (
+                        <>
+                          <CheckCircle className="w-4 h-4" />
+                          <span>Append Note & Save</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Submit Button */}
             <div className="flex justify-end pt-2">
