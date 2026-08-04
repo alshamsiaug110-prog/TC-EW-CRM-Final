@@ -24,7 +24,7 @@ export default function LeadIntake({ currentUser, onLeadAdded }: LeadIntakeProps
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [duplicateError, setDuplicateError] = useState<string | null>(null);
   const [generalError, setGeneralError] = useState<string | null>(null);
-  const [duplicateWarning, setDuplicateWarning] = useState<{ name: string; status: string; addedBy: string; phone: string } | null>(null);
+  const [duplicateWarning, setDuplicateWarning] = useState<Lead | null>(null);
   const [checkingDuplicate, setCheckingDuplicate] = useState(false);
 
   // Unconverted contact form state
@@ -61,12 +61,7 @@ export default function LeadIntake({ currentUser, onLeadAdded }: LeadIntakeProps
       try {
         const result = await DatabaseService.checkPhoneDuplicate(normalized);
         if (result.exists && result.lead) {
-          setDuplicateWarning({
-            name: result.lead.name,
-            status: result.lead.status,
-            addedBy: result.lead.addedBy,
-            phone: result.lead.phone
-          });
+          setDuplicateWarning(result.lead);
         } else {
           setDuplicateWarning(null);
         }
@@ -285,6 +280,19 @@ export default function LeadIntake({ currentUser, onLeadAdded }: LeadIntakeProps
                         <span>Status: <strong className="text-amber-400">{duplicateWarning.status}</strong></span>
                         <span>•</span>
                         <span>Added by: <strong className="text-neutral-300">{duplicateWarning.addedBy}</strong></span>
+                      </div>
+                      <div className="pt-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setDuplicateLeadToEdit(duplicateWarning);
+                            setDuplicateEditNote('');
+                          }}
+                          className="text-xs font-bold bg-amber-500 hover:bg-amber-600 text-neutral-950 px-3 py-1.5 rounded transition-colors shadow-sm inline-flex items-center space-x-1"
+                        >
+                          <Eye className="w-3.5 h-3.5" />
+                          <span>Open Lead & Add Note</span>
+                        </button>
                       </div>
                     </div>
                   </motion.div>
