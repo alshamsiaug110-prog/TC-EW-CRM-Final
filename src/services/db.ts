@@ -358,6 +358,36 @@ export const DatabaseService = {
     return { exists: false };
   },
 
+  async checkDuplicate(query: string, type: 'name' | 'phone'): Promise<{ exists: boolean; lead?: Lead }> {
+    if (!query || query.trim().length < 3) return { exists: false };
+    
+    try {
+      let q = supabase.from('leads').select('*').order('createdAt', { ascending: false }).limit(1);
+      
+      if (type === 'phone') {
+        const normalized = normalizePhone(query);
+        if (!normalized) return { exists: false };
+        q = q.eq('phone', normalized);
+      } else {
+        q = q.ilike('name', `%${query.trim()}%`);
+      }
+
+      const { data, error } = await q;
+
+      if (error) {
+        console.error('Check duplicate query error:', error);
+        return { exists: false };
+      }
+
+      if (data && data.length > 0) {
+        return { exists: true, lead: data[0] as Lead };
+      }
+    } catch (e) {
+      console.error('Check duplicate exception:', e);
+    }
+    return { exists: false };
+  },
+
   async addLead(
     leadData: Omit<Lead, 'id' | 'createdAt' | 'updatedAt' | 'statusHistory' | 'callLogs'>,
     author: { name: string; role: UserRole }

@@ -45,6 +45,16 @@ export default function LeadIntake({ currentUser, onLeadAdded }: LeadIntakeProps
   const [duplicateEditNote, setDuplicateEditNote] = useState('');
   const [isUpdatingDuplicate, setIsUpdatingDuplicate] = useState(false);
 
+  // Global Search state
+  const [globalSearchName, setGlobalSearchName] = useState('');
+  const [globalSearchPhone, setGlobalSearchPhone] = useState('');
+  const [globalSearchResult, setGlobalSearchResult] = useState<Lead | null>(null);
+  const [isSearchingGlobal, setIsSearchingGlobal] = useState(false);
+
+  // UC duplicate warning state
+  const [ucDuplicateWarning, setUcDuplicateWarning] = useState<Lead | null>(null);
+  const [checkingUcDuplicate, setCheckingUcDuplicate] = useState(false);
+
   // Phone live normalization preview
   const normalizedPhonePreview = phone ? normalizePhone(phone) : '';
 
@@ -74,6 +84,56 @@ export default function LeadIntake({ currentUser, onLeadAdded }: LeadIntakeProps
 
     return () => clearTimeout(timer);
   }, [phone]);
+
+  // Global search effect
+  React.useEffect(() => {
+    const query = globalSearchPhone || globalSearchName;
+    const type = globalSearchPhone ? 'phone' : 'name';
+    
+    if (!query || query.trim().length < 3) {
+      setGlobalSearchResult(null);
+      return;
+    }
+
+    const timer = setTimeout(async () => {
+      setIsSearchingGlobal(true);
+      try {
+        const result = await DatabaseService.checkDuplicate(query, type);
+        setGlobalSearchResult(result.lead || null);
+      } catch (e) {
+        console.error(e);
+      } finally {
+        setIsSearchingGlobal(false);
+      }
+    }, 500);
+
+    return () => clearTimeout(timer);
+  }, [globalSearchName, globalSearchPhone]);
+
+  // UC duplicate warning effect
+  React.useEffect(() => {
+    const query = ucPhone || ucName;
+    const type = ucPhone ? 'phone' : 'name';
+    
+    if (!query || query.trim().length < 3) {
+      setUcDuplicateWarning(null);
+      return;
+    }
+
+    const timer = setTimeout(async () => {
+      setCheckingUcDuplicate(true);
+      try {
+        const result = await DatabaseService.checkDuplicate(query, type);
+        setUcDuplicateWarning(result.lead || null);
+      } catch (e) {
+        console.error(e);
+      } finally {
+        setCheckingUcDuplicate(false);
+      }
+    }, 500);
+
+    return () => clearTimeout(timer);
+  }, [ucName, ucPhone]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -206,6 +266,62 @@ export default function LeadIntake({ currentUser, onLeadAdded }: LeadIntakeProps
         <p className="mt-2 text-sm text-neutral-400 font-medium">
           Enter patient inquiries. The system normalizes Egyptian phone formats automatically and rejects duplicate entries.
         </p>
+      </div>
+
+      {/* Global Quick Search */}
+      <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-5 shadow-sm">
+        <h3 className="text-xs font-bold text-neutral-400 uppercase tracking-wider mb-3">Quick Verify Lead</h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <input
+            type="text"
+            placeholder="Search by Name..."
+            value={globalSearchName}
+            onChange={(e) => {
+              setGlobalSearchName(e.target.value);
+              if (globalSearchPhone) setGlobalSearchPhone('');
+            }}
+            className="w-full bg-neutral-950 border border-neutral-800 rounded-lg px-4 py-2.5 text-sm text-white placeholder-neutral-600 focus:ring-1 focus:ring-emerald-500"
+          />
+          <input
+            type="text"
+            placeholder="Search by Phone..."
+            value={globalSearchPhone}
+            onChange={(e) => {
+              setGlobalSearchPhone(e.target.value);
+              if (globalSearchName) setGlobalSearchName('');
+            }}
+            className="w-full bg-neutral-950 border border-neutral-800 rounded-lg px-4 py-2.5 text-sm text-white placeholder-neutral-600 focus:ring-1 focus:ring-emerald-500 font-mono"
+          />
+        </div>
+        
+        {isSearchingGlobal && (
+          <p className="text-xs text-neutral-500 mt-3 animate-pulse">Searching database...</p>
+        )}
+        
+        {!isSearchingGlobal && globalSearchResult && (
+          <motion.div 
+            initial={{ opacity: 0, y: -5 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="mt-4 p-4 bg-emerald-500/10 border border-emerald-500/20 rounded-xl flex items-center justify-between"
+          >
+            <div className="text-sm">
+              <span className="text-emerald-400 font-bold uppercase tracking-wider text-xs block mb-1">Lead Found</span>
+              <strong className="text-white text-base">{globalSearchResult.name}</strong>
+              <span className="text-neutral-500 mx-2">|</span>
+              <span className="text-emerald-400 font-mono">{globalSearchResult.phone}</span>
+            </div>
+            <button
+              onClick={() => {
+                setDuplicateLeadToEdit(globalSearchResult);
+                setDuplicateEditNote('');
+              }}
+              className="text-sm font-bold bg-emerald-500 hover:bg-emerald-600 text-white px-4 py-2 rounded-lg transition-colors flex items-center space-x-1.5 shadow-md"
+            >
+              <Eye className="w-4 h-4" />
+              <span>Open Lead Page</span>
+            </button>
+          </motion.div>
+        )}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
@@ -696,6 +812,35 @@ export default function LeadIntake({ currentUser, onLeadAdded }: LeadIntakeProps
                     className="w-full px-3 py-2 bg-neutral-950 border border-neutral-800 rounded-lg text-xs text-white placeholder:text-neutral-700 focus:outline-none focus:ring-1 focus:ring-emerald-500"
                   />
                 </div>
+
+                {ucDuplicateWarning && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -5 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-lg flex items-start space-x-2 text-xs text-amber-200"
+                  >
+                    <AlertTriangle className="w-3.5 h-3.5 text-amber-400 mt-0.5 flex-shrink-0 animate-pulse" />
+                    <div className="space-y-1">
+                      <p className="font-bold text-amber-300">Duplicate Found</p>
+                      <p className="leading-relaxed font-medium">
+                        This contact might already be a lead: <span className="text-white font-bold">{ucDuplicateWarning.name}</span>.
+                      </p>
+                      <div className="pt-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setDuplicateLeadToEdit(ucDuplicateWarning);
+                            setDuplicateEditNote('');
+                          }}
+                          className="text-[10px] font-bold bg-amber-500 hover:bg-amber-600 text-neutral-950 px-2.5 py-1.5 rounded transition-colors shadow-sm inline-flex items-center space-x-1"
+                        >
+                          <Eye className="w-3 h-3" />
+                          <span>Open Lead Page</span>
+                        </button>
+                      </div>
+                    </div>
+                  </motion.div>
+                )}
 
                 {ucErrorMsg && (
                   <div className="text-[10px] text-rose-400 font-semibold">{ucErrorMsg}</div>
