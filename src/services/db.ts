@@ -358,10 +358,11 @@ export const DatabaseService = {
     return { exists: false };
   },
 
-  async checkDuplicate(query: string, type: 'name' | 'phone'): Promise<{ exists: boolean; lead?: Lead }> {
+  async checkDuplicate(query: string, type: 'name' | 'phone'): Promise<{ exists: boolean; resultType?: 'lead' | 'unconverted'; data?: Lead | UnconvertedContact }> {
     if (!query || query.trim().length < 3) return { exists: false };
     
     try {
+      // 1. Check Leads first
       let q = supabase.from('leads').select('*').order('createdAt', { ascending: false }).limit(1);
       
       if (type === 'phone') {
@@ -374,14 +375,27 @@ export const DatabaseService = {
 
       const { data, error } = await q;
 
-      if (error) {
-        console.error('Check duplicate query error:', error);
-        return { exists: false };
+      if (!error && data && data.length > 0) {
+        return { exists: true, resultType: 'lead', data: data[0] as Lead };
       }
 
-      if (data && data.length > 0) {
-        return { exists: true, lead: data[0] as Lead };
+      // 2. Check Unconverted Contacts
+      let ucQ = supabase.from('unconverted_contacts').select('*').order('createdAt', { ascending: false }).limit(1);
+      
+      if (type === 'phone') {
+        const normalized = normalizePhone(query);
+        if (!normalized) return { exists: false };
+        ucQ = ucQ.eq('phone', normalized);
+      } else {
+        ucQ = ucQ.ilike('name', `%${query.trim()}%`);
       }
+
+      const { data: ucData, error: ucError } = await ucQ;
+
+      if (!ucError && ucData && ucData.length > 0) {
+        return { exists: true, resultType: 'unconverted', data: ucData[0] as UnconvertedContact };
+      }
+
     } catch (e) {
       console.error('Check duplicate exception:', e);
     }
