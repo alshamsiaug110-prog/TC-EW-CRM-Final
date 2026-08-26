@@ -6,11 +6,12 @@ import MonitorDashboard from './components/MonitorDashboard';
 import CallCenter from './components/CallCenter';
 import OrganizerDashboard from './components/OrganizerDashboard';
 import AttendanceReport from './components/AttendanceReport';
+import BookingWorkspace from './components/BookingWorkspace';
 import { DatabaseService } from './services/db';
-import { Eye, ChartPie, Phone, Settings, LogOut, User, Activity, Clock, ShieldAlert, BadgeInfo, Copy, Check, ExternalLink, Bell, Mail } from 'lucide-react';
+import { Eye, ChartPie, Phone, Settings, LogOut, User, Activity, Clock, ShieldAlert, BadgeInfo, Copy, Check, ExternalLink, Bell, Mail, Calendar } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
-type PageType = 'intake' | 'monitor' | 'callcenter' | 'organizer' | 'attendance';
+type PageType = 'intake' | 'monitor' | 'callcenter' | 'organizer' | 'attendance' | 'bookings';
 
 export default function App() {
   const [user, setUser] = useState<SystemUser | null>(null);
@@ -48,6 +49,7 @@ export default function App() {
       'Team Leader': ['All', 'Team Leaders'],
       'Call Center': ['All', 'Call Center'],
       'Moderator': ['All', 'Moderators'],
+      'Doctor': ['All'],
     };
     const allowedRoles = recipientMap[user.role] || ['All'];
     return messages.filter(msg => allowedRoles.includes(msg.recipientRole) && !msg.readBy.includes(user.name));
@@ -61,6 +63,7 @@ export default function App() {
       'Team Leader': ['All', 'Team Leaders'],
       'Call Center': ['All', 'Call Center'],
       'Moderator': ['All', 'Moderators'],
+      'Doctor': ['All'],
     };
     const allowedRoles = recipientMap[user.role] || ['All'];
     return messages.filter(msg => allowedRoles.includes(msg.recipientRole));
@@ -86,6 +89,9 @@ export default function App() {
         setUser(parsed);
         // Default page based on role on entry
         setDefaultPageForRole(parsed.role);
+        // The saved session skips LoginScreen entirely, so make sure today's
+        // attendance still gets recorded even on a restored session.
+        DatabaseService.ensureDailyAttendance(parsed.name, parsed.role);
       } catch (e) {
         localStorage.removeItem('eyeworld_session');
       }
@@ -113,6 +119,8 @@ export default function App() {
       setActivePage('callcenter');
     } else if (role === 'Moderator') {
       setActivePage('intake');
+    } else if (role === 'Doctor') {
+      setActivePage('bookings');
     }
   };
 
@@ -120,13 +128,11 @@ export default function App() {
     setUser(loggedInUser);
     localStorage.setItem('eyeworld_session', JSON.stringify(loggedInUser));
     setDefaultPageForRole(loggedInUser.role);
-    if (loggedInUser.role === 'Moderator' || loggedInUser.role === 'Call Center') {
-      await DatabaseService.recordLogin(loggedInUser.name, loggedInUser.role);
-    }
+    await DatabaseService.recordLogin(loggedInUser.name, loggedInUser.role);
   };
 
   const handleLogout = async () => {
-    if (user && (user.role === 'Moderator' || user.role === 'Call Center')) {
+    if (user) {
       await DatabaseService.recordLogout(user.name, user.role);
     }
     setUser(null);
@@ -244,6 +250,8 @@ export default function App() {
         return ['Admin', 'Organizer'].includes(user.role);
       case 'attendance':
         return ['Admin', 'Team Leader', 'Organizer'].includes(user.role);
+      case 'bookings':
+        return ['Admin', 'Organizer', 'Team Leader', 'Call Center', 'Moderator', 'Doctor'].includes(user.role);
       default:
         return false;
     }
@@ -256,6 +264,7 @@ export default function App() {
     { id: 'attendance', label: 'Attendance', icon: Clock, page: 'attendance' as PageType },
     { id: 'callcenter', label: 'Call Center', icon: Phone, page: 'callcenter' as PageType },
     { id: 'intake', label: 'Lead Intake', icon: Eye, page: 'intake' as PageType },
+    { id: 'bookings', label: 'Appointments', icon: Calendar, page: 'bookings' as PageType },
   ];
 
   const allowedMenuItems = menuItems.filter(item => hasAccess(item.page));
@@ -471,6 +480,7 @@ export default function App() {
             {activePage === 'callcenter' && hasAccess('callcenter') && <CallCenter currentUser={user} />}
             {activePage === 'organizer' && hasAccess('organizer') && <OrganizerDashboard currentUser={user} />}
             {activePage === 'attendance' && hasAccess('attendance') && <AttendanceReport />}
+            {activePage === 'bookings' && hasAccess('bookings') && <BookingWorkspace currentUser={user} />}
           </motion.div>
         </AnimatePresence>
       </main>
