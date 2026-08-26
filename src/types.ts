@@ -1,10 +1,11 @@
-export type UserRole = 'Admin' | 'Organizer' | 'Team Leader' | 'Call Center' | 'Moderator';
+export type UserRole = 'Admin' | 'Organizer' | 'Team Leader' | 'Call Center' | 'Moderator' | 'Doctor';
 
 export interface SystemUser {
   pin: string;
   name: string;
   role: UserRole;
   avatarColor: string;
+  doctorId?: string | null;
 }
 
 export const SYSTEM_USERS: SystemUser[] = [
@@ -40,6 +41,7 @@ export interface CallLogEntry {
 
 export interface Lead {
   id: string;
+  customerId?: string | null;
   name: string;
   phone: string; // Internal: 0XXXXXXXXXX format
   entity: LeadEntity;
@@ -86,6 +88,56 @@ export interface AuditLog {
 }
 
 export type UnconvertedReason = 'No phone provided' | 'No name provided' | 'Went silent' | 'Spam/irrelevant' | 'Other';
+
+export interface Doctor {
+  id: string;
+  name: string;
+  clinic: 'Eye World' | 'Top Care' | string;
+  department: 'Dr. Ihab Clinic' | 'Eye World Hospital' | 'Dermatology' | 'Dentistry' | string;
+  degree: string;
+  specialty: string;
+  branch: string;
+  phone: string;
+  consultationFee: string;
+  isActive: boolean;
+  notes: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface DoctorAvailability {
+  id: string;
+  doctorId: string;
+  dayOfWeek: number;
+  startTime: string;
+  endTime: string;
+  slotDurationMinutes: number;
+  isActive: boolean;
+}
+
+export type AppointmentStatus = 'Pending' | 'Confirmed' | 'Canceled' | 'Rescheduled' | 'Completed' | 'No-Show';
+export type BookingSource = 'Moderator' | 'Call Center' | 'Organizer' | 'Doctor' | 'Other';
+
+export interface Appointment {
+  id: string;
+  leadId: string | null;
+  customerId: string | null;
+  patientName: string;
+  patientPhone: string;
+  doctorId: string;
+  doctorName: string;
+  branch: string;
+  appointmentDate: string;
+  startTime: string;
+  endTime: string;
+  status: AppointmentStatus;
+  bookingSource: BookingSource;
+  notes: string;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+  canceledReason: string | null;
+}
 
 export interface UnconvertedContact {
   id: string;

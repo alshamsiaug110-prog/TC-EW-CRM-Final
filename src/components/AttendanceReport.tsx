@@ -94,13 +94,22 @@ function formatCairoDateString(dateStr: string): string {
   }
 }
 
+// Any gap between two logged actions longer than this counts as "sleep"
+// (idle) time instead of active work time.
+const SLEEP_GAP_MINUTES = 60;
+// One hour of daily sleep time is treated as the employee's entitled break
+// and is not counted against them.
+const DAILY_BREAK_MINUTES = 60;
+
 interface DailyAttendanceRow {
   dateStr: string; // YYYY-MM-DD
   user: string;
   role: UserRole;
   firstLogin: string | null; // UTC timestamp
   lastLogout: string | null; // UTC timestamp
-  totalHours: number;
+  totalHours: number; // raw login -> logout duration, includes break & sleep
+  activeHours: number; // time between actions where the gap was <= 60 min
+  sleepHours: number; // time where the gap was > 60 min, minus the daily break
   hasAbnormal: boolean;
   isCurrentlyActive: boolean;
   sessionsCount: number;
@@ -110,6 +119,7 @@ export default function AttendanceReport() {
   const [loading, setLoading] = useState<boolean>(true);
   const [users, setUsers] = useState<SystemUser[]>([]);
   const [attendanceLogs, setAttendanceLogs] = useState<AuditLog[]>([]);
+  const [allLogs, setAllLogs] = useState<AuditLog[]>([]);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   // Filter Date states (defaulting to current month: from 1st of month to today)
@@ -132,12 +142,14 @@ export default function AttendanceReport() {
     setErrorMsg(null);
     try {
       const fetchedUsers = await DatabaseService.getUsers();
-      // Filter only Moderator and Call Center roles for attendance report tracking
-      const eligibleUsers = fetchedUsers.filter(u => u.role === 'Moderator' || u.role === 'Call Center');
-      setUsers(eligibleUsers);
+      setUsers(fetchedUsers);
 
-      const logs = await DatabaseService.getAttendanceLogs();
+      const [logs, everything] = await Promise.all([
+        DatabaseService.getAttendanceLogs(),
+        DatabaseService.getAllLogsForAttendance(),
+      ]);
       setAttendanceLogs(logs);
+      setAllLogs(everything);
     } catch (err: any) {
       console.error('Error fetching attendance data:', err);
       setErrorMsg(err.message || 'Failed to load attendance logs.');
@@ -180,6 +192,43 @@ export default function AttendanceReport() {
       logsByUser[log.user].push(log);
     });
 
+    // Walks every action this user took (any category) between two
+    // timestamps, chronologically, and splits the elapsed time into
+    // "active" (gap since the previous action <= SLEEP_GAP_MINUTES) and
+    // "sleep" (gap > SLEEP_GAP_MINUTES - the whole gap counts, not just the
+    // excess). Mirrors the login-open -> action -> action -> logout flow.
+    const computeSessionActiveSleep = (
+      userName: string,
+      sessionStartIso: string,
+      sessionEndIso: string
+    ): { activeMinutes: number; sleepMinutesRaw: number } => {
+      const startMs = new Date(sessionStartIso).getTime();
+      const endMs = new Date(sessionEndIso).getTime();
+      const actionsInSession = allLogs
+        .filter(l => l.user === userName)
+        .map(l => new Date(l.timestamp).getTime())
+        .filter(t => t >= startMs && t <= endMs)
+        .sort((a, b) => a - b);
+
+      // Always walk starting from the login moment itself, then through
+      // every subsequent action, then to the logout/now moment.
+      const points = [startMs, ...actionsInSession, endMs];
+
+      let activeMinutes = 0;
+      let sleepMinutesRaw = 0;
+      for (let i = 1; i < points.length; i++) {
+        const gapMinutes = (points[i] - points[i - 1]) / (1000 * 60);
+        if (gapMinutes <= 0) continue;
+        if (gapMinutes > SLEEP_GAP_MINUTES) {
+          sleepMinutesRaw += gapMinutes;
+        } else {
+          activeMinutes += gapMinutes;
+        }
+      }
+
+      return { activeMinutes, sleepMinutesRaw };
+    };
+
     // Pair logs chronologically per user
     Object.keys(logsByUser).forEach(userName => {
       const userLogs = logsByUser[userName];
@@ -190,6 +239,8 @@ export default function AttendanceReport() {
         loginTime: string;
         logoutTime: string | null;
         hours: number;
+        activeMinutes: number;
+        sleepMinutesRaw: number;
         isAbnormal: boolean;
         dateStr: string; // Cairo date of login
       }[] = [];
@@ -204,21 +255,29 @@ export default function AttendanceReport() {
             const logoutCairo = getCairoParts(nextLog.timestamp);
             const isAbnormal = nextLog.details === 'Auto-closed (abnormal end)';
             const hours = isAbnormal ? 0 : Math.max(0, (logoutCairo.epoch - loginCairo.epoch) / (1000 * 60 * 60));
-            
+            const breakdown = isAbnormal
+              ? { activeMinutes: 0, sleepMinutesRaw: 0 }
+              : computeSessionActiveSleep(userName, log.timestamp, nextLog.timestamp);
+
             pairings.push({
               loginTime: log.timestamp,
               logoutTime: nextLog.timestamp,
               hours,
+              activeMinutes: breakdown.activeMinutes,
+              sleepMinutesRaw: breakdown.sleepMinutesRaw,
               isAbnormal,
               dateStr: loginCairo.dateStr
             });
             i++; // skip logout log
           } else {
             // Unmatched login - user is currently live/active
+            const breakdown = computeSessionActiveSleep(userName, log.timestamp, new Date().toISOString());
             pairings.push({
               loginTime: log.timestamp,
               logoutTime: null,
               hours: 0,
+              activeMinutes: breakdown.activeMinutes,
+              sleepMinutesRaw: breakdown.sleepMinutesRaw,
               isAbnormal: false,
               dateStr: loginCairo.dateStr
             });
@@ -243,6 +302,8 @@ export default function AttendanceReport() {
         let firstLogin: string | null = null;
         let lastLogout: string | null = null;
         let totalHours = 0;
+        let activeMinutesSum = 0;
+        let sleepMinutesRawSum = 0;
         let hasAbnormal = false;
         let isCurrentlyActive = false;
 
@@ -259,10 +320,16 @@ export default function AttendanceReport() {
           }
 
           totalHours += p.hours;
+          activeMinutesSum += p.activeMinutes;
+          sleepMinutesRawSum += p.sleepMinutesRaw;
           if (p.isAbnormal) {
             hasAbnormal = true;
           }
         });
+
+        // The employee is entitled to one hour of break per day; only the
+        // sleep time beyond that counts as real idle time.
+        const sleepMinutesReal = Math.max(0, sleepMinutesRawSum - DAILY_BREAK_MINUTES);
 
         records.push({
           dateStr: dateKey,
@@ -271,6 +338,8 @@ export default function AttendanceReport() {
           firstLogin,
           lastLogout: isCurrentlyActive ? null : lastLogout,
           totalHours,
+          activeHours: activeMinutesSum / 60,
+          sleepHours: sleepMinutesReal / 60,
           hasAbnormal,
           isCurrentlyActive,
           sessionsCount: dayPairings.length
@@ -562,9 +631,16 @@ export default function AttendanceReport() {
                               <span className="text-[9px] text-neutral-500 font-sans font-medium">(Excluded)</span>
                             </p>
                           ) : (
-                            <p className="text-xs font-bold text-emerald-400">
-                              {rec.totalHours.toFixed(2)} hrs
-                            </p>
+                            <>
+                              <p className="text-xs font-bold text-emerald-400">
+                                {rec.totalHours.toFixed(2)} hrs <span className="text-neutral-500 font-sans font-medium">total shift</span>
+                              </p>
+                              <div className="flex items-center gap-2 justify-end mt-0.5">
+                                <span className="text-[10px] font-bold text-sky-400">{rec.activeHours.toFixed(2)}h active</span>
+                                <span className="text-neutral-700">•</span>
+                                <span className="text-[10px] font-bold text-neutral-500">{rec.sleepHours.toFixed(2)}h sleep</span>
+                              </div>
+                            </>
                           )}
                         </div>
                       </div>

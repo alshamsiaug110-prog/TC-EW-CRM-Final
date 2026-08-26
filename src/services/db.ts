@@ -482,7 +482,7 @@ export const DatabaseService = {
     leadId: string,
     updates: Partial<Lead>,
     modifier: { name: string; role: UserRole }
-  ): Promise<{ success: boolean; lead?: Lead }> {
+  ): Promise<{ success: boolean; lead?: Lead; error?: string }> {
     let oldLead: Lead | undefined;
 
     // Fetch old lead from Supabase
@@ -702,6 +702,7 @@ export const DatabaseService = {
         'Team Leader': ['All', 'Team Leaders'],
         'Call Center': ['All', 'Call Center'],
         'Moderator': ['All', 'Moderators'],
+        'Doctor': ['All'],
       };
 
       const targetRecipientRoles = recipientMap[userRole] || ['All'];
@@ -794,6 +795,68 @@ export const DatabaseService = {
     }
   },
 
+  // All activity across every category, used to compute active vs. sleep
+  // time inside a login/logout session (any action counts, not just Attendance).
+  async getAllLogsForAttendance(): Promise<AuditLog[]> {
+    try {
+      const { data, error } = await supabase
+        .from('audit_logs')
+        .select('*')
+        .order('timestamp', { ascending: true });
+
+      if (error) {
+        console.error('Supabase query error (all logs for attendance):', error);
+        return [];
+      }
+
+      return (data || []) as AuditLog[];
+    } catch (e) {
+      console.error('Supabase connection exception (all logs for attendance):', e);
+      return [];
+    }
+  },
+
+  // Called whenever a session is restored from localStorage (i.e. the user
+  // never re-entered their PIN). Without this, recordLogin() only ever fires
+  // once - the very first time someone logs in on a device - because the
+  // saved session silently persists across days. This checks the most recent
+  // Attendance log for the user in Africa/Cairo time; if it isn't from today,
+  // it records a fresh Login so daily attendance is actually captured.
+  async ensureDailyAttendance(user: string, role: UserRole): Promise<void> {
+    try {
+      const { data, error } = await supabase
+        .from('audit_logs')
+        .select('*')
+        .eq('user', user)
+        .eq('category', 'Attendance')
+        .order('timestamp', { ascending: false })
+        .limit(1);
+
+      if (error) {
+        console.error('Error checking daily attendance:', error);
+        return;
+      }
+
+      const cairoDateFmt = new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Cairo' });
+      const todayCairo = cairoDateFmt.format(new Date());
+
+      if (!data || data.length === 0) {
+        await this.recordLogin(user, role);
+        return;
+      }
+
+      const latest = data[0] as AuditLog;
+      const latestCairo = cairoDateFmt.format(new Date(latest.timestamp));
+
+      if (latestCairo !== todayCairo) {
+        // Last recorded attendance event was on a previous day - start a fresh one.
+        await this.recordLogin(user, role);
+      }
+    } catch (e) {
+      console.error('Exception ensuring daily attendance:', e);
+    }
+  },
+
   async addAuditLog(user: string, role: UserRole, category: AuditLog['category'], action: string, details: string): Promise<void> {
     const newLog: AuditLog = {
       id: `log-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
@@ -816,10 +879,6 @@ export const DatabaseService = {
   },
 
   async recordLogin(user: string, role: UserRole): Promise<void> {
-    if (role !== 'Moderator' && role !== 'Call Center') {
-      return;
-    }
-
     try {
       // 1. Check if user has an unmatched login
       const { data, error } = await supabase
@@ -868,10 +927,6 @@ export const DatabaseService = {
   },
 
   async recordLogout(user: string, role: UserRole, details: string = 'User logged out explicitly'): Promise<void> {
-    if (role !== 'Moderator' && role !== 'Call Center') {
-      return;
-    }
-
     try {
       const now = new Date().toISOString();
       const logoutLog: AuditLog = {
@@ -1154,6 +1209,91 @@ export const DatabaseService = {
       console.error('Exception promoting unconverted contact:', e);
       return false;
     }
+  },
+
+  // Doctors, recurring availability, and structured appointments API
+  async getDoctors(): Promise<import('../types').Doctor[]> {
+    try {
+      const { data, error } = await supabase.from('doctors').select('*').order('name', { ascending: true });
+      if (error) { console.error('Supabase get doctors error:', error); return []; }
+      return (data || []) as import('../types').Doctor[];
+    } catch (e) { console.error('Supabase get doctors exception:', e); return []; }
+  },
+
+  async addDoctor(data: Omit<import('../types').Doctor, 'id' | 'createdAt' | 'updatedAt'>, actor: { name: string; role: UserRole }): Promise<{ success: boolean; doctor?: import('../types').Doctor; error?: string }> {
+    const now = new Date().toISOString();
+    const doctor = { ...data, id: `doctor-${Date.now()}-${Math.floor(Math.random() * 1000)}`, createdAt: now, updatedAt: now };
+    try {
+      const { error } = await supabase.from('doctors').insert([doctor]);
+      if (error) return { success: false, error: error.message };
+      await this.addAuditLog(actor.name, actor.role, 'Organizer', 'Add Doctor', `Added doctor ${doctor.name} at ${doctor.branch}.`);
+      return { success: true, doctor: doctor as import('../types').Doctor };
+    } catch (e: any) { return { success: false, error: e.message || String(e) }; }
+  },
+
+  async updateDoctor(id: string, updates: Partial<import('../types').Doctor>, actor: { name: string; role: UserRole }): Promise<{ success: boolean; error?: string }> {
+    try {
+      const { error } = await supabase.from('doctors').update({ ...updates, updatedAt: new Date().toISOString() }).eq('id', id);
+      if (error) return { success: false, error: error.message };
+      await this.addAuditLog(actor.name, actor.role, 'Organizer', 'Update Doctor', `Updated doctor ${id}.`);
+      return { success: true };
+    } catch (e: any) { return { success: false, error: e.message || String(e) }; }
+  },
+
+  async getAvailability(doctorId: string): Promise<import('../types').DoctorAvailability[]> {
+    try {
+      const { data, error } = await supabase.from('doctor_availability').select('*').eq('doctorId', doctorId).order('dayOfWeek').order('startTime');
+      if (error) { console.error('Supabase get availability error:', error); return []; }
+      return (data || []) as import('../types').DoctorAvailability[];
+    } catch (e) { console.error('Supabase get availability exception:', e); return []; }
+  },
+
+  async saveAvailability(rule: Omit<import('../types').DoctorAvailability, 'id'>, actor: { name: string; role: UserRole }): Promise<{ success: boolean; error?: string }> {
+    try {
+      const { data: existing } = await supabase.from('doctor_availability').select('id').eq('doctorId', rule.doctorId).eq('dayOfWeek', rule.dayOfWeek).maybeSingle();
+      const payload = { ...rule, id: existing?.id || `availability-${Date.now()}-${Math.floor(Math.random() * 1000)}` };
+      const { error } = existing
+        ? await supabase.from('doctor_availability').update(rule).eq('id', existing.id)
+        : await supabase.from('doctor_availability').insert([payload]);
+      if (error) return { success: false, error: error.message };
+      await this.addAuditLog(actor.name, actor.role, 'Organizer', 'Update Availability', `Updated weekly availability for doctor ${rule.doctorId}.`);
+      return { success: true };
+    } catch (e: any) { return { success: false, error: e.message || String(e) }; }
+  },
+
+  async getAppointments(filters?: { from?: string; to?: string; doctorId?: string }): Promise<import('../types').Appointment[]> {
+    try {
+      let query = supabase.from('appointments').select('*').order('appointmentDate', { ascending: true }).order('startTime', { ascending: true });
+      if (filters?.from) query = query.gte('appointmentDate', filters.from);
+      if (filters?.to) query = query.lte('appointmentDate', filters.to);
+      if (filters?.doctorId) query = query.eq('doctorId', filters.doctorId);
+      const { data, error } = await query;
+      if (error) { console.error('Supabase get appointments error:', error); return []; }
+      return (data || []) as import('../types').Appointment[];
+    } catch (e) { console.error('Supabase get appointments exception:', e); return []; }
+  },
+
+  async addAppointment(data: Omit<import('../types').Appointment, 'id' | 'createdAt' | 'updatedAt'>, actor: { name: string; role: UserRole }): Promise<{ success: boolean; appointment?: import('../types').Appointment; error?: string }> {
+    const now = new Date().toISOString();
+    const appointment = { ...data, id: `appointment-${Date.now()}-${Math.floor(Math.random() * 1000)}`, createdAt: now, updatedAt: now };
+    try {
+      const { error } = await supabase.from('appointments').insert([appointment]);
+      if (error) {
+        const conflict = error.code === '23505' || error.message.toLowerCase().includes('unique');
+        return { success: false, error: conflict ? 'هذا الموعد تم حجزه للتو. حدّث القائمة واختر موعدًا آخر.' : error.message };
+      }
+      await this.addAuditLog(actor.name, actor.role, 'Call Center', 'Create Appointment', `Created appointment for ${appointment.patientName} with ${appointment.doctorName} on ${appointment.appointmentDate} at ${appointment.startTime}.`);
+      return { success: true, appointment: appointment as import('../types').Appointment };
+    } catch (e: any) { return { success: false, error: e.message || String(e) }; }
+  },
+
+  async updateAppointment(id: string, updates: Partial<import('../types').Appointment>, actor: { name: string; role: UserRole }): Promise<{ success: boolean; error?: string }> {
+    try {
+      const { error } = await supabase.from('appointments').update({ ...updates, updatedAt: new Date().toISOString() }).eq('id', id);
+      if (error) return { success: false, error: error.message };
+      await this.addAuditLog(actor.name, actor.role, 'Call Center', 'Update Appointment', `Updated appointment ${id}.`);
+      return { success: true };
+    } catch (e: any) { return { success: false, error: e.message || String(e) }; }
   },
 
   async runDiagnostics(): Promise<{
