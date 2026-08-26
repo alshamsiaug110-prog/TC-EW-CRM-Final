@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { DatabaseService } from '../services/db';
-import { Lead, LeadStatus, LeadPriority, SystemUser, UserRole, UnconvertedContact } from '../types';
+import { BookingRequestEvent, Lead, LeadStatus, LeadPriority, SystemUser, UserRole, UnconvertedContact } from '../types';
 import { 
   ShieldCheck, Search, Filter, MessageSquare, Lock, Eye, CheckCircle2, 
   AlertCircle, Sparkles, RefreshCw, Layers, ShieldAlert, Plus, Trash2, 
@@ -27,6 +27,7 @@ interface OrganizerDashboardProps {
 export default function OrganizerDashboard({ currentUser, onLeadOptimized }: OrganizerDashboardProps) {
   const [leads, setLeads] = useState<Lead[]>([]);
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
+  const [bookingEvents, setBookingEvents] = useState<BookingRequestEvent[]>([]);
   const [activeTab, setActiveTab] = useState<'leads' | 'booked' | 'reports' | 'users'>('leads');
 
   // Directory Search & Filter States
@@ -108,6 +109,13 @@ export default function OrganizerDashboard({ currentUser, onLeadOptimized }: Org
   React.useEffect(() => {
     refreshLeads();
   }, []);
+
+  React.useEffect(() => {
+    if (!selectedLead) { setBookingEvents([]); return; }
+    DatabaseService.getBookingRequestEvents(selectedLead.id).then(setBookingEvents).catch(console.error);
+    const timer = window.setInterval(() => DatabaseService.getBookingRequestEvents(selectedLead.id).then(setBookingEvents).catch(console.error), 10000);
+    return () => window.clearInterval(timer);
+  }, [selectedLead?.id]);
 
   const handleSelectLead = (lead: Lead) => {
     setSelectedLead(lead);
@@ -690,6 +698,11 @@ export default function OrganizerDashboard({ currentUser, onLeadOptimized }: Org
                       <p className="text-xs text-blue-200 font-medium leading-relaxed">"{selectedLead.callCenterNote}"</p>
                     </div>
                   )}
+
+                  <div className="space-y-2 bg-emerald-500/5 p-3.5 rounded-xl border border-emerald-500/15">
+                    <div className="flex items-center justify-between"><h4 className="text-[10px] uppercase font-bold text-emerald-400 flex items-center gap-1.5"><Calendar className="w-3.5 h-3.5" /> Doctor Request Timeline</h4><span className="text-[10px] text-neutral-500">{bookingEvents.length} events</span></div>
+                    {bookingEvents.length === 0 ? <p className="text-xs text-neutral-500">لا توجد طلبات أو ردود طبية مرتبطة بهذا المريض حتى الآن.</p> : <div className="space-y-2 max-h-48 overflow-y-auto pr-1">{bookingEvents.map(event => <div key={event.id} className="rounded-lg border border-neutral-800 bg-neutral-950/30 px-3 py-2"><div className="flex justify-between gap-3 text-[10px] text-neutral-500"><span>{event.actorName} · {event.actorRole}</span><span>{new Date(event.createdAt).toLocaleString()}</span></div><p className="text-xs font-bold text-emerald-300 mt-1">{event.eventType}</p><p className="text-xs text-neutral-300 mt-1 leading-relaxed">{event.message}</p></div>)}</div>}
+                  </div>
 
                   {/* With Booking (commissionEligible) read-only display for Admin & Organizer */}
                   <div className="flex justify-between items-center bg-neutral-950/20 p-3 rounded-xl border border-neutral-850">

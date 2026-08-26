@@ -7,9 +7,10 @@ import { motion, AnimatePresence } from 'motion/react';
 interface LeadIntakeProps {
   currentUser: SystemUser;
   onLeadAdded?: () => void;
+  onRequestBooking?: (lead: Lead) => void;
 }
 
-export default function LeadIntake({ currentUser, onLeadAdded }: LeadIntakeProps) {
+export default function LeadIntake({ currentUser, onLeadAdded, onRequestBooking }: LeadIntakeProps) {
   // Form State
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
@@ -23,6 +24,7 @@ export default function LeadIntake({ currentUser, onLeadAdded }: LeadIntakeProps
 
   // Status & Feedback States
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
+  const [lastCreatedLead, setLastCreatedLead] = useState<Lead | null>(null);
   const [duplicateError, setDuplicateError] = useState<string | null>(null);
   const [generalError, setGeneralError] = useState<string | null>(null);
   const [duplicateWarning, setDuplicateWarning] = useState<Lead | null>(null);
@@ -179,6 +181,7 @@ export default function LeadIntake({ currentUser, onLeadAdded }: LeadIntakeProps
 
     if (result.success && result.lead) {
       setSuccessMsg(`Lead "${result.lead.name}" successfully recorded with phone ${result.lead.phone}!`);
+      setLastCreatedLead(result.lead);
       setSessionLeads([result.lead, ...sessionLeads]);
       
       // Reset form
@@ -633,9 +636,10 @@ export default function LeadIntake({ currentUser, onLeadAdded }: LeadIntakeProps
                   className="bg-emerald-950/25 border-l-4 border-emerald-500 p-4 rounded-xl flex items-start space-x-3 shadow-md border border-emerald-500/15"
                 >
                   <CheckCircle className="w-6 h-6 text-emerald-400 flex-shrink-0 mt-0.5" />
-                  <div>
+                  <div className="flex-1">
                     <h4 className="text-sm font-bold text-emerald-200">Submission Recorded Successfully</h4>
                     <p className="text-xs text-emerald-300 mt-1 font-medium">{successMsg}</p>
+                    {lastCreatedLead && onRequestBooking && <button type="button" onClick={() => onRequestBooking(lastCreatedLead)} className="mt-3 inline-flex items-center gap-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 px-3 py-2 text-xs font-extrabold text-white"><Calendar className="w-3.5 h-3.5" /> إنشاء طلب للطبيب</button>}
                   </div>
                 </motion.div>
               )}

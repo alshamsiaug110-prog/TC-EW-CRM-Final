@@ -1,18 +1,20 @@
 import React, { useState } from 'react';
 import { DatabaseService } from '../services/db';
-import { Lead, LeadStatus, LeadPriority, SystemUser, SYSTEM_USERS } from '../types';
+import { BookingRequestEvent, Lead, LeadStatus, LeadPriority, SystemUser, SYSTEM_USERS } from '../types';
 import { Phone, Search, Filter, ShieldCheck, User, Calendar, BookOpen, MessageSquareCode, Clock, RefreshCw, Send, CheckCircle2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 interface CallCenterProps {
   currentUser: SystemUser;
   onLeadUpdated?: () => void;
+  onRequestBooking?: (lead: Lead) => void;
 }
 
-export default function CallCenter({ currentUser, onLeadUpdated }: CallCenterProps) {
+export default function CallCenter({ currentUser, onLeadUpdated, onRequestBooking }: CallCenterProps) {
   const [leads, setLeads] = useState<Lead[]>([]);
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
   const [agents, setAgents] = useState<SystemUser[]>(SYSTEM_USERS);
+  const [bookingEvents, setBookingEvents] = useState<BookingRequestEvent[]>([]);
   
   // Search & Filter State
   const [searchQuery, setSearchQuery] = useState('');
@@ -51,6 +53,13 @@ export default function CallCenter({ currentUser, onLeadUpdated }: CallCenterPro
     refreshLeads();
     DatabaseService.getUsers().then(setAgents).catch(console.error);
   }, []);
+
+  React.useEffect(() => {
+    if (!selectedLead) { setBookingEvents([]); return; }
+    DatabaseService.getBookingRequestEvents(selectedLead.id).then(setBookingEvents).catch(console.error);
+    const timer = window.setInterval(() => DatabaseService.getBookingRequestEvents(selectedLead.id).then(setBookingEvents).catch(console.error), 10000);
+    return () => window.clearInterval(timer);
+  }, [selectedLead?.id]);
 
   // Set action forms when lead selection changes
   const handleSelectLead = (lead: Lead) => {
@@ -366,6 +375,7 @@ export default function CallCenter({ currentUser, onLeadUpdated }: CallCenterPro
                       <span>Claim to Me</span>
                     </button>
                   )}
+                  {onRequestBooking && <button onClick={() => onRequestBooking(selectedLead)} className="px-3 py-1.5 border border-emerald-500/30 bg-emerald-500/10 hover:bg-emerald-500/20 rounded-lg text-xs font-bold flex items-center space-x-1 text-emerald-300"><Calendar className="w-3.5 h-3.5" /><span>طلب للطبيب</span></button>}
                 </div>
 
                 <form onSubmit={handleSaveAction} className="space-y-6">
@@ -516,6 +526,11 @@ export default function CallCenter({ currentUser, onLeadUpdated }: CallCenterPro
                       ))}
                     </div>
                   )}
+                </div>
+
+                <div className="md:col-span-2 space-y-4 border-t border-neutral-850 pt-5">
+                  <h4 className="text-xs font-bold text-neutral-400 uppercase tracking-wider flex items-center space-x-1.5 border-b border-neutral-850 pb-2"><Calendar className="w-3.5 h-3.5 text-emerald-400" /><span>Doctor Request Timeline</span></h4>
+                  {bookingEvents.length === 0 ? <p className="text-xs text-neutral-500">لا توجد طلبات أو ردود طبية مرتبطة بهذا المريض حتى الآن.</p> : <div className="space-y-2 max-h-52 overflow-y-auto pr-1">{bookingEvents.map(event => <div key={event.id} className="rounded-xl border border-neutral-800 bg-neutral-950/30 p-3 text-xs"><div className="flex justify-between gap-4 text-[10px] text-neutral-500"><span>{event.actorName} · {event.actorRole}</span><span>{new Date(event.createdAt).toLocaleString()}</span></div><p className="text-emerald-300 font-bold mt-1">{event.eventType}</p><p className="text-neutral-300 mt-1 leading-relaxed">{event.message}</p></div>)}</div>}
                 </div>
 
               </div>
