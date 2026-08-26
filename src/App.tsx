@@ -7,11 +7,12 @@ import CallCenter from './components/CallCenter';
 import OrganizerDashboard from './components/OrganizerDashboard';
 import AttendanceReport from './components/AttendanceReport';
 import BookingWorkspace from './components/BookingWorkspace';
+import DoctorWorkspace from './components/DoctorWorkspace';
 import { DatabaseService } from './services/db';
-import { Eye, ChartPie, Phone, Settings, LogOut, User, Activity, Clock, ShieldAlert, BadgeInfo, Copy, Check, ExternalLink, Bell, Mail, Calendar } from 'lucide-react';
+import { Eye, ChartPie, Phone, Settings, LogOut, User, Activity, Clock, ShieldAlert, BadgeInfo, Copy, Check, ExternalLink, Bell, Mail, Calendar, Stethoscope } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
-type PageType = 'intake' | 'monitor' | 'callcenter' | 'organizer' | 'attendance' | 'bookings';
+type PageType = 'intake' | 'monitor' | 'callcenter' | 'organizer' | 'attendance' | 'bookings' | 'doctor';
 
 export default function App() {
   const [user, setUser] = useState<SystemUser | null>(null);
@@ -20,6 +21,7 @@ export default function App() {
   const [dbError, setDbError] = useState<string | null>(null);
   const [showSetupModal, setShowSetupModal] = useState<boolean>(false);
   const [copied, setCopied] = useState<boolean>(false);
+  const [bookingLeadId, setBookingLeadId] = useState<string | null>(null);
   
   // Notification States
   const [messages, setMessages] = useState<TeamMessage[]>([]);
@@ -120,7 +122,7 @@ export default function App() {
     } else if (role === 'Moderator') {
       setActivePage('intake');
     } else if (role === 'Doctor') {
-      setActivePage('bookings');
+      setActivePage('doctor');
     }
   };
 
@@ -137,6 +139,11 @@ export default function App() {
     }
     setUser(null);
     localStorage.removeItem('eyeworld_session');
+  };
+
+  const openBookingRequest = (leadId: string) => {
+    setBookingLeadId(leadId);
+    setActivePage('bookings');
   };
 
   const handleCopySQL = () => {
@@ -252,6 +259,8 @@ export default function App() {
         return ['Admin', 'Team Leader', 'Organizer'].includes(user.role);
       case 'bookings':
         return ['Admin', 'Organizer', 'Team Leader', 'Call Center', 'Moderator', 'Doctor'].includes(user.role);
+      case 'doctor':
+        return ['Admin', 'Organizer', 'Doctor'].includes(user.role);
       default:
         return false;
     }
@@ -265,6 +274,7 @@ export default function App() {
     { id: 'callcenter', label: 'Call Center', icon: Phone, page: 'callcenter' as PageType },
     { id: 'intake', label: 'Lead Intake', icon: Eye, page: 'intake' as PageType },
     { id: 'bookings', label: 'Appointments', icon: Calendar, page: 'bookings' as PageType },
+    { id: 'doctor', label: 'Doctor Desk', icon: Stethoscope, page: 'doctor' as PageType },
   ];
 
   const allowedMenuItems = menuItems.filter(item => hasAccess(item.page));
@@ -475,12 +485,13 @@ export default function App() {
             exit={{ opacity: 0, y: -8 }}
             transition={{ duration: 0.18, ease: 'easeOut' }}
           >
-            {activePage === 'intake' && hasAccess('intake') && <LeadIntake currentUser={user} />}
+            {activePage === 'intake' && hasAccess('intake') && <LeadIntake currentUser={user} onRequestBooking={(lead) => openBookingRequest(lead.id)} />}
             {activePage === 'monitor' && hasAccess('monitor') && <MonitorDashboard />}
-            {activePage === 'callcenter' && hasAccess('callcenter') && <CallCenter currentUser={user} />}
+            {activePage === 'callcenter' && hasAccess('callcenter') && <CallCenter currentUser={user} onRequestBooking={(lead) => openBookingRequest(lead.id)} />}
             {activePage === 'organizer' && hasAccess('organizer') && <OrganizerDashboard currentUser={user} />}
             {activePage === 'attendance' && hasAccess('attendance') && <AttendanceReport />}
-            {activePage === 'bookings' && hasAccess('bookings') && <BookingWorkspace currentUser={user} />}
+            {activePage === 'bookings' && hasAccess('bookings') && <BookingWorkspace currentUser={user} prefillLeadId={bookingLeadId} onPrefillHandled={() => setBookingLeadId(null)} />}
+            {activePage === 'doctor' && hasAccess('doctor') && <DoctorWorkspace currentUser={user} />}
           </motion.div>
         </AnimatePresence>
       </main>

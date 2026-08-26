@@ -139,6 +139,43 @@ export interface Appointment {
   canceledReason: string | null;
 }
 
+export type DoctorRequestStatus = 'Requested' | 'Approved' | 'Needs Reschedule' | 'Declined' | 'Patient Confirmed' | 'Canceled';
+
+export interface DoctorBookingRequest {
+  id: string;
+  leadId: string;
+  customerId: string | null;
+  patientName: string;
+  patientPhone: string;
+  doctorId: string;
+  doctorName: string;
+  clinic: string;
+  department: string;
+  requestedDate: string;
+  requestedStartTime: string;
+  requestedEndTime: string;
+  requestStatus: DoctorRequestStatus;
+  requestNote: string;
+  createdBy: string;
+  createdByRole: UserRole;
+  doctorResponseNote: string;
+  respondedBy: string | null;
+  respondedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface BookingRequestEvent {
+  id: string;
+  requestId: string;
+  leadId: string;
+  eventType: 'Request Created' | 'Doctor Approved' | 'Doctor Needs Reschedule' | 'Doctor Declined' | 'Patient Confirmed' | 'Request Canceled';
+  message: string;
+  actorName: string;
+  actorRole: UserRole;
+  createdAt: string;
+}
+
 export interface UnconvertedContact {
   id: string;
   entity: LeadEntity;
