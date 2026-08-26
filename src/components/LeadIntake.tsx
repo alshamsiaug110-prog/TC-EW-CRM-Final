@@ -13,6 +13,7 @@ export default function LeadIntake({ currentUser, onLeadAdded }: LeadIntakeProps
   // Form State
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
+  const [customerId, setCustomerId] = useState('');
   const [entity, setEntity] = useState<LeadEntity>('Eye World');
   const [platform, setPlatform] = useState<LeadPlatform>('WhatsApp');
   const [priority, setPriority] = useState<LeadPriority>('Warm');
@@ -156,6 +157,7 @@ export default function LeadIntake({ currentUser, onLeadAdded }: LeadIntakeProps
     const result = await DatabaseService.addLead(
       {
         name: name.trim(),
+        customerId: customerId.trim() || null,
         phone: phone.trim(),
         entity,
         platform,
@@ -181,6 +183,7 @@ export default function LeadIntake({ currentUser, onLeadAdded }: LeadIntakeProps
       
       // Reset form
       setName('');
+      setCustomerId('');
       setPhone('');
       setInquiryNote('');
       setIsBooked(false);
@@ -222,6 +225,7 @@ export default function LeadIntake({ currentUser, onLeadAdded }: LeadIntakeProps
       
       // Reset form
       setName('');
+      setCustomerId('');
       setPhone('');
       setInquiryNote('');
     } else {
@@ -341,6 +345,7 @@ export default function LeadIntake({ currentUser, onLeadAdded }: LeadIntakeProps
                   setEntity(globalSearchResult.data.entity as LeadEntity);
                   setPlatform(globalSearchResult.data.platform as LeadPlatform);
                   setPhone('');
+                  setCustomerId('');
                   setGlobalSearchResult(null);
                   setGlobalSearchName('');
                   window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -391,6 +396,18 @@ export default function LeadIntake({ currentUser, onLeadAdded }: LeadIntakeProps
                     className="block w-full pl-11 pr-4 py-3 bg-neutral-950 border border-neutral-800 rounded-xl focus:bg-black focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 focus:outline-none transition-all text-sm font-medium text-white placeholder:text-neutral-600"
                   />
                 </div>
+              </div>
+
+              {/* Customer ID */}
+              <div>
+                <label className="block text-sm font-semibold text-neutral-300 mb-2">Customer ID <span className="text-neutral-600">(optional)</span></label>
+                <input
+                  type="text"
+                  value={customerId}
+                  onChange={(e) => setCustomerId(e.target.value)}
+                  placeholder="Existing patient ID"
+                  className="block w-full px-4 py-3 bg-neutral-950 border border-neutral-800 rounded-xl focus:bg-black focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 focus:outline-none transition-all text-sm font-mono text-white"
+                />
               </div>
 
               {/* Phone Input */}

@@ -15,6 +15,7 @@ const getUserPermissions = (role: string): string[] => {
   if (['Admin', 'Organizer'].includes(role)) perms.push('monitor');
   if (['Admin', 'Organizer', 'Team Leader', 'Call Center'].includes(role)) perms.push('callcenter');
   if (['Admin', 'Organizer'].includes(role)) perms.push('organizer');
+  if (['Admin', 'Organizer', 'Team Leader', 'Call Center', 'Moderator', 'Doctor'].includes(role)) perms.push('bookings');
   return perms;
 };
 
@@ -1547,6 +1548,7 @@ export default function OrganizerDashboard({ currentUser, onLeadOptimized }: Org
                       <option value="Team Leader">Team Leader (Hanaa - Call Center supervisor)</option>
                       <option value="Call Center">Call Center (Omar/Eman - Active Agent Work)</option>
                       <option value="Moderator">Moderator (Amal/Menna - Inquiry Intake Only)</option>
+                      <option value="Doctor">Doctor (Appointments and own availability)</option>
                     </select>
                   </div>
 
@@ -1647,7 +1649,8 @@ export default function OrganizerDashboard({ currentUser, onLeadOptimized }: Org
                       const labels: Record<string, string> = {
                         intake: 'Inquiry Intake',
                         monitor: 'Live Monitor',
-                        callcenter: 'Call Center console',
+                                callcenter: 'Call Center console',
+                                bookings: 'Appointments workspace',
                         organizer: 'Organizer console',
                       };
                       return (
