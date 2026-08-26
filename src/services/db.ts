@@ -1,4 +1,4 @@
-import { Lead, TeamMessage, AuditLog, LeadStatus, LeadEntity, LeadPlatform, LeadPriority, UserRole, SystemUser, SYSTEM_USERS, UnconvertedContact } from '../types';
+import { Lead, TeamMessage, AuditLog, LeadStatus, LeadEntity, LeadPlatform, LeadPriority, UserRole, SystemUser, SYSTEM_USERS, UnconvertedContact, DoctorBookingRequest, BookingRequestEvent, DoctorRequestStatus } from '../types';
 import { supabase } from '../lib/supabase';
 
 // Phone normalization: converts +20XXXXXXXXXX to 0XXXXXXXXXX
@@ -1294,6 +1294,134 @@ export const DatabaseService = {
       await this.addAuditLog(actor.name, actor.role, 'Call Center', 'Update Appointment', `Updated appointment ${id}.`);
       return { success: true };
     } catch (e: any) { return { success: false, error: e.message || String(e) }; }
+  },
+
+  // Doctor request cycle: an operator proposes a slot, the doctor responds,
+  // and only the operator's patient confirmation creates the final appointment.
+  async getDoctorBookingRequests(filters?: { doctorId?: string; leadId?: string; statuses?: DoctorRequestStatus[] }): Promise<DoctorBookingRequest[]> {
+    try {
+      let query = supabase
+        .from('doctor_booking_requests')
+        .select('*')
+        .order('updatedAt', { ascending: false });
+      if (filters?.doctorId) query = query.eq('doctorId', filters.doctorId);
+      if (filters?.leadId) query = query.eq('leadId', filters.leadId);
+      if (filters?.statuses?.length) query = query.in('requestStatus', filters.statuses);
+      const { data, error } = await query;
+      if (error) { console.error('Supabase get doctor booking requests error:', error); return []; }
+      return (data || []) as DoctorBookingRequest[];
+    } catch (e) { console.error('Supabase get doctor booking requests exception:', e); return []; }
+  },
+
+  async getBookingRequestEvents(leadId: string): Promise<BookingRequestEvent[]> {
+    try {
+      const { data, error } = await supabase
+        .from('booking_request_events')
+        .select('*')
+        .eq('leadId', leadId)
+        .order('createdAt', { ascending: false });
+      if (error) { console.error('Supabase get booking request events error:', error); return []; }
+      return (data || []) as BookingRequestEvent[];
+    } catch (e) { console.error('Supabase get booking request events exception:', e); return []; }
+  },
+
+  async createDoctorBookingRequest(
+    data: Omit<DoctorBookingRequest, 'id' | 'requestStatus' | 'doctorResponseNote' | 'respondedBy' | 'respondedAt' | 'createdAt' | 'updatedAt'>,
+    actor: SystemUser,
+  ): Promise<{ success: boolean; request?: DoctorBookingRequest; error?: string }> {
+    const now = new Date().toISOString();
+    const request: DoctorBookingRequest = {
+      ...data,
+      id: `doctor-request-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+      requestStatus: 'Requested',
+      doctorResponseNote: '',
+      respondedBy: null,
+      respondedAt: null,
+      createdAt: now,
+      updatedAt: now,
+    };
+    try {
+      const { error } = await supabase.from('doctor_booking_requests').insert([request]);
+      if (error) return { success: false, error: error.message };
+      await this.addBookingRequestEvent(request, 'Request Created', `طلب حجز جديد مع ${request.doctorName} في ${request.requestedDate} الساعة ${request.requestedStartTime}.`, actor);
+      await this.addAuditLog(actor.name, actor.role, 'System', 'Doctor Booking Request', `Created booking request ${request.id} for ${request.patientName} with ${request.doctorName}.`);
+      return { success: true, request };
+    } catch (e: any) { return { success: false, error: e.message || String(e) }; }
+  },
+
+  async respondToDoctorBookingRequest(
+    request: DoctorBookingRequest,
+    status: Extract<DoctorRequestStatus, 'Approved' | 'Needs Reschedule' | 'Declined'>,
+    responseNote: string,
+    actor: SystemUser,
+  ): Promise<{ success: boolean; error?: string }> {
+    if (actor.role !== 'Doctor') return { success: false, error: 'فقط الطبيب يستطيع إصدار القرار الطبي.' };
+    if (actor.doctorId && actor.doctorId !== request.doctorId) return { success: false, error: 'هذا الطلب ليس مخصصًا لهذا الطبيب.' };
+    if (request.requestStatus !== 'Requested') return { success: false, error: 'تمت معالجة هذا الطلب بالفعل.' };
+    const now = new Date().toISOString();
+    const eventType: Record<typeof status, BookingRequestEvent['eventType']> = {
+      Approved: 'Doctor Approved',
+      'Needs Reschedule': 'Doctor Needs Reschedule',
+      Declined: 'Doctor Declined',
+    };
+    try {
+      const { error } = await supabase
+        .from('doctor_booking_requests')
+        .update({ requestStatus: status, doctorResponseNote: responseNote.trim(), respondedBy: actor.name, respondedAt: now, updatedAt: now })
+        .eq('id', request.id);
+      if (error) return { success: false, error: error.message };
+      const label = status === 'Approved' ? 'وافق الطبيب على الطلب' : status === 'Needs Reschedule' ? 'طلب الطبيب إعادة جدولة' : 'اعتذر الطبيب عن الطلب';
+      await this.addBookingRequestEvent({ ...request, requestStatus: status }, eventType[status], `${label}${responseNote.trim() ? `: ${responseNote.trim()}` : '.'}`, actor);
+      const recipient = request.createdByRole === 'Moderator' ? 'Moderators' : request.createdByRole === 'Call Center' ? 'Call Center' : 'All';
+      await this.addMessage(`قرار الطبيب ${request.doctorName} بخصوص ${request.patientName}: ${label}.`, actor, recipient);
+      await this.addAuditLog(actor.name, actor.role, 'System', 'Doctor Booking Decision', `Set request ${request.id} to ${status}.`);
+      return { success: true };
+    } catch (e: any) { return { success: false, error: e.message || String(e) }; }
+  },
+
+  async confirmDoctorBookingRequest(request: DoctorBookingRequest, actor: SystemUser): Promise<{ success: boolean; error?: string }> {
+    if (request.requestStatus !== 'Approved') return { success: false, error: 'لا يمكن تأكيد المريض قبل موافقة الطبيب.' };
+    const appointmentResult = await this.addAppointment({
+      leadId: request.leadId,
+      customerId: request.customerId,
+      patientName: request.patientName,
+      patientPhone: request.patientPhone,
+      doctorId: request.doctorId,
+      doctorName: request.doctorName,
+      branch: request.clinic,
+      appointmentDate: request.requestedDate,
+      startTime: request.requestedStartTime,
+      endTime: request.requestedEndTime,
+      status: 'Confirmed',
+      bookingSource: actor.role === 'Moderator' || actor.role === 'Call Center' || actor.role === 'Organizer' || actor.role === 'Doctor' ? actor.role : 'Other',
+      notes: request.requestNote,
+      createdBy: actor.name,
+      canceledReason: null,
+    }, actor);
+    if (!appointmentResult.success) return { success: false, error: appointmentResult.error };
+    const now = new Date().toISOString();
+    try {
+      const { error } = await supabase.from('doctor_booking_requests').update({ requestStatus: 'Patient Confirmed', updatedAt: now }).eq('id', request.id);
+      if (error) return { success: false, error: error.message };
+      await this.updateLead(request.leadId, { status: 'Booked/Confirmed', isBookedForAppointment: true }, actor);
+      await this.addBookingRequestEvent({ ...request, requestStatus: 'Patient Confirmed' }, 'Patient Confirmed', `أكد ${actor.name} موافقة المريض على الموعد مع ${request.doctorName}.`, actor);
+      return { success: true };
+    } catch (e: any) { return { success: false, error: e.message || String(e) }; }
+  },
+
+  async addBookingRequestEvent(request: DoctorBookingRequest, eventType: BookingRequestEvent['eventType'], message: string, actor: SystemUser): Promise<void> {
+    const event: BookingRequestEvent = {
+      id: `booking-event-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+      requestId: request.id,
+      leadId: request.leadId,
+      eventType,
+      message,
+      actorName: actor.name,
+      actorRole: actor.role,
+      createdAt: new Date().toISOString(),
+    };
+    const { error } = await supabase.from('booking_request_events').insert([event]);
+    if (error) console.error('Supabase add booking request event error:', error);
   },
 
   async runDiagnostics(): Promise<{
