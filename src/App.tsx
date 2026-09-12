@@ -131,13 +131,44 @@ export default function App() {
     await DatabaseService.recordLogin(loggedInUser.name, loggedInUser.role);
   };
 
-  const handleLogout = async () => {
+  const handleLogout = async (reason: string = 'User logged out explicitly') => {
     if (user) {
-      await DatabaseService.recordLogout(user.name, user.role);
+      await DatabaseService.recordLogout(user.name, user.role, reason);
     }
     setUser(null);
     localStorage.removeItem('eyeworld_session');
   };
+
+  // Auto-logout after 1 hour (60 min) of no activity anywhere on the page.
+  // Any click, keypress, scroll, or mouse movement resets the timer. When it
+  // fires, we log the user out for real (a proper Logout event is recorded)
+  // so they have to log back in - this keeps attendance sessions from
+  // silently running for hours/days when someone just walks away or closes
+  // the laptop lid without clicking Logout.
+  useEffect(() => {
+    if (!user) return;
+
+    const INACTIVITY_LIMIT_MS = 60 * 60 * 1000; // 1 hour
+    let inactivityTimer: ReturnType<typeof setTimeout>;
+
+    const resetInactivityTimer = () => {
+      clearTimeout(inactivityTimer);
+      inactivityTimer = setTimeout(() => {
+        handleLogout('Auto-logout after 1 hour of inactivity');
+      }, INACTIVITY_LIMIT_MS);
+    };
+
+    const activityEvents: (keyof WindowEventMap)[] = [
+      'mousemove', 'mousedown', 'keydown', 'scroll', 'touchstart', 'click'
+    ];
+    activityEvents.forEach(evt => window.addEventListener(evt, resetInactivityTimer));
+    resetInactivityTimer();
+
+    return () => {
+      clearTimeout(inactivityTimer);
+      activityEvents.forEach(evt => window.removeEventListener(evt, resetInactivityTimer));
+    };
+  }, [user]);
 
   const handleCopySQL = () => {
     navigator.clipboard.writeText(SUPABASE_SETUP_SQL);
@@ -434,7 +465,7 @@ export default function App() {
               </div>
 
               <button
-                onClick={handleLogout}
+                onClick={() => handleLogout()}
                 className="p-2.5 hover:bg-rose-950/20 text-neutral-400 hover:text-rose-400 rounded-xl transition-all border border-neutral-800 hover:border-rose-900/30 cursor-pointer"
                 title="Log Out Session"
               >
